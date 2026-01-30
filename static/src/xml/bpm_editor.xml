@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="custom_bpm.BpmEditorWidget">
+        <div class="bpm_editor_widget">
+            <!-- Barre d'outils -->
+            <div class="bpm_toolbar">
+                <button class="btn btn-sm btn-primary" t-on-click="() => this.addNode('start')">
+                    <i class="fa fa-play"/> Ajouter Début
+                </button>
+                <button class="btn btn-sm btn-primary" t-on-click="() => this.addNode('task')">
+                    <i class="fa fa-tasks"/> Ajouter Tâche
+                </button>
+                <button class="btn btn-sm btn-primary" t-on-click="() => this.addNode('gateway')">
+                    <i class="fa fa-code-branch"/> Ajouter Décision
+                </button>
+                <button class="btn btn-sm btn-primary" t-on-click="() => this.addNode('end')">
+                    <i class="fa fa-stop"/> Ajouter Fin
+                </button>
+                <button class="btn btn-sm btn-danger" 
+                        t-att-disabled="!state.selectedNode"
+                        t-on-click="deleteSelectedNode">
+                    <i class="fa fa-trash"/> Supprimer Nœud
+                </button>
+                <button class="btn btn-sm btn-info" 
+                        t-att-disabled="!state.selectedNode"
+                        t-on-click="(ev) => this.startConnection(state.selectedNode)">
+                    <i class="fa fa-link"/> Connecter
+                </button>
+            </div>
+
+            <!-- Canvas SVG -->
+            <div class="bpm_canvas_container">
+                <svg t-ref="canvas" class="bpm_canvas" width="100%" height="600">
+                    <!-- Définition des marqueurs pour les flèches -->
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="10" 
+                                refX="9" refY="3" orient="auto">
+                            <polygon points="0 0, 10 3, 0 6" fill="#333"/>
+                        </marker>
+                    </defs>
+
+                    <!-- Dessine les transitions (edges) -->
+                    <g class="edges">
+                        <t t-foreach="state.edges" t-as="edge" t-key="edge.id">
+                            <t t-set="edgeNodes" t-value="this.getEdgeNodes(edge)"/>
+                            <t t-if="edgeNodes.sourceNode and edgeNodes.targetNode">
+                                <path t-att-d="this.getEdgePath(edgeNodes.sourceNode, edgeNodes.targetNode)"
+                                      class="bpm_edge"
+                                      t-att-class="{'bpm_edge_selected': state.selectedEdge and state.selectedEdge.id === edge.id}"
+                                      stroke="#333"
+                                      stroke-width="2"
+                                      fill="none"
+                                      marker-end="url(#arrowhead)"
+                                      t-on-click.stop="() => this.state.selectedEdge = edge"/>
+                            </t>
+                        </t>
+                    </g>
+
+                    <!-- Dessine les nœuds -->
+                    <g class="nodes">
+                        <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                            <g t-att-class="{'bpm_node_selected': state.selectedNode and state.selectedNode.id === node.id}"
+                               t-att-transform="`translate(${node.x}, ${node.y})`">
+                                <!-- Rectangle du nœud -->
+                                <rect class="bpm_node"
+                                      t-att-fill="this.getNodeColor(node.type)"
+                                      width="80"
+                                      height="80"
+                                      rx="5"
+                                      stroke="#fff"
+                                      stroke-width="2"
+                                      t-on-mousedown.stop="(ev) => this.startDrag(ev, node)"/>
+                                
+                                <!-- Texte du nœud -->
+                                <text x="40" y="45" 
+                                      text-anchor="middle" 
+                                      fill="white" 
+                                      font-size="12" 
+                                      font-weight="bold"
+                                      pointer-events="none">
+                                    <t t-esc="node.name"/>
+                                </text>
+                                
+                                <!-- Bouton de connexion (petit cercle) -->
+                                <circle cx="80" cy="40" 
+                                        r="8" 
+                                        fill="#fff" 
+                                        stroke="#333" 
+                                        stroke-width="2"
+                                        class="bpm_connection_point"
+                                        t-on-click.stop="() => this.startConnection(node)"/>
+                            </g>
+                        </t>
+                    </g>
+                </svg>
+            </div>
+
+            <!-- Panneau de propriétés (si un nœud est sélectionné) -->
+            <div class="bpm_properties_panel" t-if="state.selectedNode">
+                <h5>Propriétés du nœud</h5>
+                <div class="form-group">
+                    <label>Nom:</label>
+                    <input type="text" 
+                           class="form-control" 
+                           t-model="state.selectedNode.name"
+                           t-on-input="saveDefinition"/>
+                </div>
+                <div class="form-group">
+                    <label>Type:</label>
+                    <select class="form-control" 
+                            t-model="state.selectedNode.type"
+                            t-on-change="saveDefinition">
+                        <option value="start">Début</option>
+                        <option value="task">Tâche</option>
+                        <option value="gateway">Décision</option>
+                        <option value="end">Fin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Position X:</label>
+                    <input type="number" 
+                           class="form-control" 
+                           t-model="state.selectedNode.x"
+                           t-on-input="saveDefinition"/>
+                </div>
+                <div class="form-group">
+                    <label>Position Y:</label>
+                    <input type="number" 
+                           class="form-control" 
+                           t-model="state.selectedNode.y"
+                           t-on-input="saveDefinition"/>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>
+
