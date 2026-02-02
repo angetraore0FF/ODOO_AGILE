@@ -37,6 +37,16 @@
     cursor: default;
 }
 
+/* Mode connexion actif */
+.bpm_canvas.connecting {
+    cursor: crosshair;
+}
+
+/* Mode pan actif */
+.bpm_canvas.panning {
+    cursor: grabbing;
+}
+
 .bpm_node {
     cursor: move;
     transition: filter 0.2s;

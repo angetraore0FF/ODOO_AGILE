@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
-    <t t-name="custom_bpm.BpmEditorWidget">
+    <t t-name="ODOO_AGILE.BpmEditorWidget">
         <div class="bpm_editor_widget">
-            <!-- Barre d'outils -->
+            <!-- Indicateur de chargement -->
+            <div t-if="state.isLoading" class="text-center p-5">
+                <i class="fa fa-spinner fa-spin fa-3x text-primary"/>
+                <p class="mt-3">Chargement du workflow...</p>
+            </div>
+
+            <!-- Éditeur -->
+            <t t-else="">
+                <!-- Barre d'outils -->
             <div class="bpm_toolbar">
                 <button class="btn btn-sm btn-primary" t-on-click="() => this.addNode('start')">
                     <i class="fa fa-play"/> Ajouter Début
@@ -26,11 +34,25 @@
                         t-on-click="(ev) => this.startConnection(state.selectedNode)">
                     <i class="fa fa-link"/> Connecter
                 </button>
+                <div class="ms-auto text-muted small">
+                    <span class="me-3">
+                        <i class="fa fa-mouse-pointer"/> <strong>Shift + Glisser</strong> : Déplacer la vue
+                    </span>
+                    <span class="me-3">
+                        <i class="fa fa-search"/> <strong>Molette</strong> : Zoom
+                    </span>
+                    <span>
+                        Zoom : <strong t-esc="Math.round(state.zoom * 100)"/>%
+                    </span>
+                </div>
             </div>
 
             <!-- Canvas SVG -->
             <div class="bpm_canvas_container">
-                <svg t-ref="canvas" class="bpm_canvas" width="100%" height="600">
+                <svg t-ref="canvas" 
+                     t-att-class="{'bpm_canvas': true, 'connecting': state.isConnecting, 'panning': state.isPanning}" 
+                     width="100%" 
+                     height="600">
                     <!-- Définition des marqueurs pour les flèches -->
                     <defs>
                         <marker id="arrowhead" markerWidth="10" markerHeight="10" 
@@ -39,7 +61,9 @@
                         </marker>
                     </defs>
 
-                    <!-- Dessine les transitions (edges) -->
+                    <!-- Groupe avec transformation (pan et zoom) -->
+                    <g t-att-transform="`translate(${state.panOffset.x}, ${state.panOffset.y}) scale(${state.zoom})`">
+                        <!-- Dessine les transitions (edges) -->
                     <g class="edges">
                         <t t-foreach="state.edges" t-as="edge" t-key="edge.id">
                             <t t-set="edgeNodes" t-value="this.getEdgeNodes(edge)"/>
@@ -92,6 +116,7 @@
                             </g>
                         </t>
                     </g>
+                    </g>
                 </svg>
             </div>
 
@@ -131,6 +156,47 @@
                            t-on-input="saveDefinition"/>
                 </div>
             </div>
+
+            <!-- Panneau de propriétés (si une transition est sélectionnée) -->
+            <div class="bpm_properties_panel" t-if="state.selectedEdge">
+                <h5>Propriétés de la transition</h5>
+                <div class="form-group">
+                    <label>Nom:</label>
+                    <input type="text" 
+                           class="form-control" 
+                           t-model="state.selectedEdge.name"
+                           placeholder="Ex: Si montant > 1000"
+                           t-on-input="saveDefinition"/>
+                </div>
+                <div class="form-group">
+                    <label>Condition (Python):</label>
+                    <textarea class="form-control" 
+                              rows="3"
+                              t-model="state.selectedEdge.condition"
+                              placeholder="Ex: record.amount_total > 1000"
+                              t-on-input="saveDefinition"/>
+                    <small class="form-text text-muted">
+                        Laissez vide pour une transition automatique. 
+                        Utilisez 'record' pour accéder à l'enregistrement.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label>Séquence:</label>
+                    <input type="number" 
+                           class="form-control" 
+                           t-model="state.selectedEdge.sequence"
+                           placeholder="10"
+                           t-on-input="saveDefinition"/>
+                    <small class="form-text text-muted">
+                        Ordre d'évaluation des transitions (plus petit = prioritaire)
+                    </small>
+                </div>
+                <button class="btn btn-sm btn-danger mt-2" 
+                        t-on-click="deleteSelectedEdge">
+                    <i class="fa fa-trash"/> Supprimer la transition
+                </button>
+            </div>
+            </t>
         </div>
     </t>
 </templates>

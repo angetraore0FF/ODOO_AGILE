@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Template: Processus de vente complet -->
+        <record id="template_sale_full" model="bpm.template">
+            <field name="name">Processus de vente complet</field>
+            <field name="description">Workflow complet : Devis → Validation → Livraison → Facturation</field>
+            <field name="category">sales</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="sequence">10</field>
+            <field name="is_system" eval="True"/>
+            <field name="template_data">{
+  "nodes": [
+    {
+      "id": "node_start_1",
+      "name": "Début",
+      "type": "start",
+      "x": 50,
+      "y": 200
+    },
+    {
+      "id": "node_task_1",
+      "name": "Validation devis",
+      "type": "task",
+      "x": 200,
+      "y": 200
+    },
+    {
+      "id": "node_gateway_1",
+      "name": "Montant approuvé?",
+      "type": "gateway",
+      "x": 350,
+      "y": 200
+    },
+    {
+      "id": "node_task_2",
+      "name": "Préparation livraison",
+      "type": "task",
+      "x": 500,
+      "y": 150
+    },
+    {
+      "id": "node_task_3",
+      "name": "Facturation",
+      "type": "task",
+      "x": 650,
+      "y": 150
+    },
+    {
+      "id": "node_end_success",
+      "name": "Commande terminée",
+      "type": "end",
+      "x": 800,
+      "y": 150
+    },
+    {
+      "id": "node_end_reject",
+      "name": "Commande rejetée",
+      "type": "end",
+      "x": 500,
+      "y": 300
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "source": "node_start_1",
+      "target": "node_task_1",
+      "name": "Nouveau devis",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_2",
+      "source": "node_task_1",
+      "target": "node_gateway_1",
+      "name": "Devis validé",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_3",
+      "source": "node_gateway_1",
+      "target": "node_task_2",
+      "name": "Montant OK",
+      "condition": "record.amount_total > 0",
+      "sequence": 5
+    },
+    {
+      "id": "edge_4",
+      "source": "node_gateway_1",
+      "target": "node_end_reject",
+      "name": "Montant insuffisant",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_5",
+      "source": "node_task_2",
+      "target": "node_task_3",
+      "name": "Livraison prête",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_6",
+      "source": "node_task_3",
+      "target": "node_end_success",
+      "name": "Facture créée",
+      "condition": "",
+      "sequence": 10
+    }
+  ]
+}</field>
+        </record>
+
+        <!-- Template: Processus de vente simple -->
+        <record id="template_sale_simple" model="bpm.template">
+            <field name="name">Processus de vente simple</field>
+            <field name="description">Workflow simplifié : Devis → Approbation → Terminé</field>
+            <field name="category">sales</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="sequence">20</field>
+            <field name="is_system" eval="True"/>
+            <field name="template_data">{
+  "nodes": [
+    {
+      "id": "node_start_1",
+      "name": "Début",
+      "type": "start",
+      "x": 100,
+      "y": 200
+    },
+    {
+      "id": "node_task_1",
+      "name": "Vérification",
+      "type": "task",
+      "x": 250,
+      "y": 200
+    },
+    {
+      "id": "node_gateway_1",
+      "name": "Montant suffisant?",
+      "type": "gateway",
+      "x": 400,
+      "y": 200
+    },
+    {
+      "id": "node_task_2",
+      "name": "Commande approuvée",
+      "type": "task",
+      "x": 550,
+      "y": 150
+    },
+    {
+      "id": "node_end_1",
+      "name": "Terminé",
+      "type": "end",
+      "x": 700,
+      "y": 150
+    },
+    {
+      "id": "node_end_2",
+      "name": "Rejeté",
+      "type": "end",
+      "x": 550,
+      "y": 250
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "source": "node_start_1",
+      "target": "node_task_1",
+      "name": "",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_2",
+      "source": "node_task_1",
+      "target": "node_gateway_1",
+      "name": "",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_3",
+      "source": "node_gateway_1",
+      "target": "node_task_2",
+      "name": "Montant > 1000",
+      "condition": "record.amount_total > 1000",
+      "sequence": 5
+    },
+    {
+      "id": "edge_4",
+      "source": "node_gateway_1",
+      "target": "node_end_2",
+      "name": "Montant insuffisant",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_5",
+      "source": "node_task_2",
+      "target": "node_end_1",
+      "name": "",
+      "condition": "",
+      "sequence": 10
+    }
+  ]
+}</field>
+        </record>
+
+        <!-- Template: Processus d'achat -->
+        <record id="template_purchase" model="bpm.template">
+            <field name="name">Processus d'achat standard</field>
+            <field name="description">Workflow: Demande → Approbation → Réception → Paiement</field>
+            <field name="category">purchase</field>
+            <field name="model_id" ref="base.model_res_partner"/>
+            <field name="sequence">30</field>
+            <field name="is_system" eval="True"/>
+            <field name="template_data">{
+  "nodes": [
+    {
+      "id": "node_start_1",
+      "name": "Début",
+      "type": "start",
+      "x": 50,
+      "y": 200
+    },
+    {
+      "id": "node_task_1",
+      "name": "Validation achat",
+      "type": "task",
+      "x": 200,
+      "y": 200
+    },
+    {
+      "id": "node_task_2",
+      "name": "Réception",
+      "type": "task",
+      "x": 350,
+      "y": 200
+    },
+    {
+      "id": "node_task_3",
+      "name": "Paiement",
+      "type": "task",
+      "x": 500,
+      "y": 200
+    },
+    {
+      "id": "node_end_1",
+      "name": "Terminé",
+      "type": "end",
+      "x": 650,
+      "y": 200
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "source": "node_start_1",
+      "target": "node_task_1",
+      "name": "Nouveau bon de commande",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_2",
+      "source": "node_task_1",
+      "target": "node_task_2",
+      "name": "Commande validée",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_3",
+      "source": "node_task_2",
+      "target": "node_task_3",
+      "name": "Réception effectuée",
+      "condition": "",
+      "sequence": 10
+    },
+    {
+      "id": "edge_4",
+      "source": "node_task_3",
+      "target": "node_end_1",
+      "name": "Paiement effectué",
+      "condition": "",
+      "sequence": 10
+    }
+  ]
+}</field>
+        </record>
+    </data>
+</odoo>

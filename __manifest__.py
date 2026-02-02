@@ -29,17 +29,19 @@ Architecture :
 * bpm.edge : Transitions entre les nœuds
 * bpm.instance : Suivi des processus lancés
     """,
-    'depends': ['base', 'web'],
+    'depends': ['base', 'web', 'mail'],
     'data': [
         'security/ir.model.access.csv',
+        'data/bpm_template_data.xml',
         'views/bpm_views.xml',
+        'views/bpm_template_views.xml',
         'views/bpm_menu.xml',
     ],
     'assets': {
         'web.assets_backend': [
-            'custom_bpm/static/src/css/bpm_editor.css',
-            'custom_bpm/static/src/js/bpm_editor.js',
-            'custom_bpm/static/src/xml/bpm_editor.xml',
+            'ODOO_AGILE/static/src/css/bpm_editor.css',
+            'ODOO_AGILE/static/src/js/bpm_editor.js',
+            'ODOO_AGILE/static/src/xml/bpm_editor.xml',
         ],
     },
     'installable': True,

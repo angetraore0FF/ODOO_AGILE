@@ -7,4 +7,7 @@ access_bpm_edge_manager,bpm.edge.manager,model_bpm_edge,base.group_system,1,1,1,
 access_bpm_edge_user,bpm.edge.user,model_bpm_edge,base.group_user,1,0,0,0
 access_bpm_instance_manager,bpm.instance.manager,model_bpm_instance,base.group_system,1,1,1,1
 access_bpm_instance_user,bpm.instance.user,model_bpm_instance,base.group_user,1,1,1,0
+access_bpm_template_manager,bpm.template.manager,model_bpm_template,base.group_system,1,1,1,1
+access_bpm_template_user,bpm.template.user,model_bpm_template,base.group_user,1,0,0,0
+access_bpm_template_wizard,bpm.template.wizard,model_bpm_template_wizard,base.group_user,1,1,1,1
 
