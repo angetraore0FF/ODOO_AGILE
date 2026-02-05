@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Vue liste des templates -->
+    <record id="view_bpm_template_tree" model="ir.ui.view">
+        <field name="name">bpm.template.tree</field>
+        <field name="model">bpm.template</field>
+        <field name="arch" type="xml">
+            <list string="Templates de workflow">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="category"/>
+                <field name="model_id"/>
+                <field name="usage_count"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Vue formulaire des templates -->
+    <record id="view_bpm_template_form" model="ir.ui.view">
+        <field name="name">bpm.template.form</field>
+        <field name="model">bpm.template</field>
+        <field name="arch" type="xml">
+            <form string="Template de workflow">
+                <header>
+                    <button name="action_create_process_from_template" 
+                            type="object" 
+                            string="Créer un processus" 
+                            class="oe_highlight"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" type="object" 
+                                name="action_create_process_from_template" 
+                                icon="fa-plus-circle">
+                            <div class="o_field_widget o_stat_info">
+                                <span class="o_stat_value"><field name="usage_count"/></span>
+                                <span class="o_stat_text">Utilisations</span>
+                            </div>
+                        </button>
+                    </div>
+                    
+                    <widget name="web_ribbon" title="Template système" 
+                            bg_color="bg-info" invisible="not is_system"/>
+                    
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="category"/>
+                            <field name="model_id"/>
+                        </group>
+                        <group>
+                            <field name="sequence"/>
+                            <field name="active"/>
+                            <field name="is_system" invisible="1"/>
+                        </group>
+                    </group>
+                    
+                    <notebook>
+                        <page string="Description">
+                            <field name="description" placeholder="Décrivez l'usage de ce template..."/>
+                        </page>
+                        <page string="Données du template" groups="base.group_no_one">
+                            <field name="template_data" widget="ace" options="{'mode': 'json'}"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Vue kanban des templates -->
+    <record id="view_bpm_template_kanban" model="ir.ui.view">
+        <field name="name">bpm.template.kanban</field>
+        <field name="model">bpm.template</field>
+        <field name="arch" type="xml">
+            <kanban string="Templates de workflow" class="o_kanban_small_column">
+                <field name="id"/>
+                <field name="name"/>
+                <field name="category"/>
+                <field name="description"/>
+                <field name="model_id"/>
+                <field name="usage_count"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_global_click">
+                            <div class="o_kanban_record_top">
+                                <div class="o_kanban_record_headings">
+                                    <strong class="o_kanban_record_title"><field name="name"/></strong>
+                                </div>
+                                <div class="o_dropdown_kanban dropdown">
+                                    <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
+                                        <span class="fa fa-ellipsis-v"/>
+                                    </a>
+                                    <div class="dropdown-menu" role="menu">
+                                        <a role="menuitem" type="object" name="action_create_process_from_template" class="dropdown-item">Créer un processus</a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="o_kanban_record_body">
+                                <field name="description" widget="text"/>
+                                <div class="text-muted">
+                                    <i class="fa fa-cube"/> <field name="model_id"/>
+                                </div>
+                            </div>
+                            <div class="o_kanban_record_bottom">
+                                <div class="oe_kanban_bottom_left">
+                                    <span class="badge badge-pill badge-info"><field name="category"/></span>
+                                </div>
+                                <div class="oe_kanban_bottom_right">
+                                    <span class="text-muted"><field name="usage_count"/> util.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Vue recherche des templates -->
+    <!-- Correction structure search view -->
+    <record id="view_bpm_template_search" model="ir.ui.view">
+        <field name="name">bpm.template.search</field>
+        <field name="model">bpm.template</field>
+        <field name="arch" type="xml">
+            <search string="Rechercher des templates">
+                <field name="name"/>
+                <field name="model_id"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action pour les templates -->
+    <record id="action_bpm_template" model="ir.actions.act_window">
+        <field name="name">Templates de workflow</field>
+        <field name="res_model">bpm.template</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Créez votre premier template de workflow
+            </p>
+            <p>
+                Les templates permettent de créer rapidement des processus BPM prédéfinis.<br/>
+                Utilisez les templates système ou créez vos propres templates personnalisés.
+            </p>
+        </field>
+    </record>
+
+    <!-- Vue formulaire de l'assistant -->
+    <record id="view_bpm_template_wizard_form" model="ir.ui.view">
+        <field name="name">bpm.template.wizard.form</field>
+        <field name="model">bpm.template.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Créer un processus depuis un template">
+                <group>
+                    <field name="template_id" readonly="1"/>
+                    <field name="model_id" readonly="1"/>
+                </group>
+                <group>
+                    <field name="process_name" placeholder="Ex: Processus de vente simple"/>
+                    <field name="process_description" placeholder="Description du processus..."/>
+                </group>
+                <group string="Déclenchement automatique">
+                    <field name="auto_start"/>
+                    <field name="trigger_on" invisible="not auto_start"/>
+                </group>
+                <footer>
+                    <button string="Créer le processus" name="action_create_process" type="object" class="oe_highlight"/>
+                    <button string="Annuler" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Menu pour les templates -->
+    <menuitem id="menu_bpm_template"
+              name="Templates"
+              parent="menu_bpm_root"
+              action="action_bpm_template"
+              sequence="15"/>
+</odoo>
