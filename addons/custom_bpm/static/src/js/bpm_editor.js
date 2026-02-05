@@ -4,6 +4,7 @@ import { registry } from "@web/core/registry";
 import { Component, useState, onMounted, onWillUnmount, useRef } from "@odoo/owl";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { _t } from "@web/core/l10n/translation";
+import { useService } from "@web/core/utils/hooks";
 
 export class BpmEditorWidget extends Component {
     static template = "custom_bpm.BpmEditorWidget";
@@ -11,6 +12,7 @@ export class BpmEditorWidget extends Component {
 
     setup() {
         this.canvasRef = useRef("canvas");
+        this.orm = useService("orm");
         
         this.state = useState({
             cells: [],
@@ -36,6 +38,13 @@ export class BpmEditorWidget extends Component {
         onMounted(async () => {
             try {
                 await this.loadDefinition();
+                // Centrer la grille au chargement
+                const canvas = this.canvasRef.el;
+                if (canvas && this.state.cells.length === 0) {
+                    const rect = canvas.getBoundingClientRect();
+                    this.state.panOffset.x = rect.width / 2;
+                    this.state.panOffset.y = rect.height / 2;
+                }
                 this.initEvents();
             } catch (error) {
                 console.error("Erreur lors de l'initialisation de l'éditeur BPM:", error);
@@ -171,11 +180,102 @@ export class BpmEditorWidget extends Component {
                     this.state.cells = [];
                 }
             } else {
-                this.state.cells = [];
+                // Si le JSON est vide, charger depuis les nœuds Python
+                await this.loadFromPythonNodes();
             }
         } catch (error) {
             console.error("Erreur chargement BPM:", error);
             this.state.cells = [];
+        }
+    }
+
+    async loadFromPythonNodes() {
+        try {
+            if (!this.props.record || !this.props.record.resId) {
+                return;
+            }
+            
+            const processId = this.props.record.resId;
+            
+            // Charger les nœuds depuis Python
+            const nodes = await this.orm.call(
+                'bpm.node',
+                'search_read',
+                [[['process_id', '=', processId]]],
+                { fields: ['id', 'name', 'node_type', 'position_x', 'position_y', 'node_id'] }
+            );
+            
+            // Charger les edges depuis Python
+            const edges = await this.orm.call(
+                'bpm.edge',
+                'search_read',
+                [[['process_id', '=', processId]]],
+                { fields: ['id', 'name', 'source_node_id', 'target_node_id', 'edge_id'] }
+            );
+            
+            // Créer un map des nœuds Python par node_id
+            const nodeMap = {};
+            nodes.forEach(node => {
+                const cellId = `bpm_node_${node.node_id}`;
+                nodeMap[node.id] = cellId;
+                
+                // Mapper le type de nœud vers la forme
+                let shape = 'task';
+                if (node.node_type === 'start') shape = 'start';
+                else if (node.node_type === 'end') shape = 'end';
+                else if (node.node_type === 'gateway') shape = 'gateway';
+                
+                // Définir les dimensions selon le type
+                let width = 120, height = 80;
+                if (shape === 'start' || shape === 'end') {
+                    width = 50;
+                    height = 50;
+                } else if (shape === 'gateway') {
+                    width = 60;
+                    height = 60;
+                }
+                
+                const cell = {
+                    id: cellId,
+                    type: 'vertex',
+                    shape: shape,
+                    x: node.position_x || 0,
+                    y: node.position_y || 0,
+                    width: width,
+                    height: height,
+                    label: node.name || '',
+                    pythonId: node.id,
+                    pythonNodeId: node.node_id,
+                };
+                
+                this.state.cells.push(cell);
+            });
+            
+            // Créer les edges
+            edges.forEach(edge => {
+                const sourcePythonId = edge.source_node_id && edge.source_node_id[0];
+                const targetPythonId = edge.target_node_id && edge.target_node_id[0];
+                
+                if (sourcePythonId && targetPythonId && nodeMap[sourcePythonId] && nodeMap[targetPythonId]) {
+                    const cell = {
+                        id: `bpm_edge_${edge.edge_id}`,
+                        type: 'edge',
+                        source: nodeMap[sourcePythonId],
+                        target: nodeMap[targetPythonId],
+                        label: edge.name || '',
+                        pythonId: edge.id,
+                        pythonEdgeId: edge.edge_id,
+                    };
+                    this.state.cells.push(cell);
+                }
+            });
+            
+            // Sauvegarder le JSON généré
+            if (this.state.cells.length > 0) {
+                await this.saveDefinition();
+            }
+        } catch (error) {
+            console.error("Erreur chargement depuis nœuds Python:", error);
         }
     }
 
@@ -237,11 +337,192 @@ export class BpmEditorWidget extends Component {
                 await this.props.record.update({ [this.props.name]: jsonValue });
                 // Mettre à jour l'état avec les cellules nettoyées
                 this.state.cells = cleanedCells;
+                
+                // Synchroniser avec les nœuds Python
+                await this.syncToPython();
             }
         } catch (error) {
             console.error("Erreur sauvegarde BPM:", error);
             // Ne pas bloquer l'interface en cas d'erreur
         }
+    }
+
+    async syncVertexToPython(cell) {
+        try {
+            if (!this.props.record || !this.props.record.resId) {
+                console.warn('⚠️ Impossible de synchroniser: record ou resId manquant');
+                return;
+            }
+            
+            const processId = this.props.record.resId;
+            
+            // Mapper la forme vers le type de nœud
+            let nodeType = 'task';
+            if (cell.shape === 'start') nodeType = 'start';
+            else if (cell.shape === 'end') nodeType = 'end';
+            else if (cell.shape === 'gateway') nodeType = 'gateway';
+            
+            if (cell.pythonId) {
+                // Mettre à jour le nœud existant
+                console.log('🔄 Mise à jour nœud Python existant:', cell.pythonId);
+                await this.orm.write('bpm.node', [cell.pythonId], {
+                    name: cell.label || cell.shape || 'Nouveau nœud',
+                    position_x: cell.x,
+                    position_y: cell.y,
+                });
+            } else {
+                // Créer un nouveau nœud
+                // Extraire l'ID unique depuis l'ID de la cellule
+                let nodeId = cell.id;
+                if (nodeId.startsWith('bpm_node_')) {
+                    nodeId = nodeId.replace('bpm_node_', '');
+                } else if (nodeId.startsWith('bpm_cell_')) {
+                    nodeId = nodeId.replace('bpm_cell_', '');
+                } else {
+                    // Générer un ID unique si nécessaire
+                    nodeId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                }
+                
+                console.log('🆕 Création nouveau nœud Python:', {
+                    process_id: processId,
+                    name: cell.label || cell.shape || 'Nouveau nœud',
+                    node_type: nodeType,
+                    position_x: cell.x,
+                    position_y: cell.y,
+                    node_id: nodeId,
+                });
+                
+                const result = await this.orm.create('bpm.node', [{
+                    process_id: processId,
+                    name: cell.label || cell.shape || 'Nouveau nœud',
+                    node_type: nodeType,
+                    position_x: cell.x,
+                    position_y: cell.y,
+                    node_id: nodeId,
+                }]);
+                
+                // Stocker l'ID Python dans la cellule
+                if (result && result.length > 0) {
+                    cell.pythonId = result[0];
+                    cell.pythonNodeId = nodeId;
+                    console.log('✅ Nœud Python créé avec succès. ID Python:', result[0], 'node_id:', nodeId);
+                } else {
+                    console.error('❌ Erreur: aucun ID retourné lors de la création du nœud');
+                }
+            }
+        } catch (error) {
+            console.error("❌ Erreur synchronisation vertex vers Python:", error);
+            throw error; // Propager l'erreur pour le débogage
+        }
+    }
+
+    async syncEdgeToPython(cell) {
+        try {
+            if (!this.props.record || !this.props.record.resId) {
+                console.warn('⚠️ Impossible de synchroniser edge: record ou resId manquant');
+                return;
+            }
+            
+            const processId = this.props.record.resId;
+            const sourceCell = this.getCellById(cell.source);
+            const targetCell = this.getCellById(cell.target);
+            
+            if (!sourceCell || !targetCell) {
+                console.warn('⚠️ Impossible de synchroniser edge: source ou target cellule introuvable');
+                return;
+            }
+            
+            if (!sourceCell.pythonId || !targetCell.pythonId) {
+                console.warn('⚠️ Impossible de synchroniser edge: source ou target n\'a pas d\'ID Python. Source:', sourceCell.pythonId, 'Target:', targetCell.pythonId);
+                // Essayer de créer les nœuds manquants
+                if (!sourceCell.pythonId && sourceCell.type === 'vertex') {
+                    await this.syncVertexToPython(sourceCell);
+                }
+                if (!targetCell.pythonId && targetCell.type === 'vertex') {
+                    await this.syncVertexToPython(targetCell);
+                }
+                
+                // Vérifier à nouveau
+                if (!sourceCell.pythonId || !targetCell.pythonId) {
+                    console.error('❌ Impossible de créer l\'edge: les nœuds source/target n\'ont toujours pas d\'ID Python');
+                    return;
+                }
+            }
+            
+            if (cell.pythonId) {
+                // Mettre à jour l'edge existant
+                console.log('🔄 Mise à jour edge Python existant:', cell.pythonId);
+                await this.orm.write('bpm.edge', [cell.pythonId], {
+                    name: cell.label || '',
+                });
+            } else {
+                // Créer un nouvel edge
+                let edgeId = cell.id;
+                if (edgeId.startsWith('bpm_edge_')) {
+                    edgeId = edgeId.replace('bpm_edge_', '');
+                } else {
+                    edgeId = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                }
+                
+                console.log('🆕 Création nouveau edge Python:', {
+                    process_id: processId,
+                    source_node_id: sourceCell.pythonId,
+                    target_node_id: targetCell.pythonId,
+                    name: cell.label || '',
+                    edge_id: edgeId,
+                });
+                
+                const result = await this.orm.create('bpm.edge', [{
+                    process_id: processId,
+                    source_node_id: sourceCell.pythonId,
+                    target_node_id: targetCell.pythonId,
+                    name: cell.label || '',
+                    edge_id: edgeId,
+                }]);
+                
+                // Stocker l'ID Python dans la cellule
+                if (result && result.length > 0) {
+                    cell.pythonId = result[0];
+                    cell.pythonEdgeId = edgeId;
+                    console.log('✅ Edge Python créé avec succès. ID Python:', result[0], 'edge_id:', edgeId);
+                } else {
+                    console.error('❌ Erreur: aucun ID retourné lors de la création de l\'edge');
+                }
+            }
+        } catch (error) {
+            console.error("❌ Erreur synchronisation edge vers Python:", error);
+            throw error; // Propager l'erreur pour le débogage
+        }
+    }
+
+    async syncToPython() {
+        try {
+            if (!this.props.record || !this.props.record.resId) return;
+            
+            // Synchroniser tous les vertices
+            for (const cell of this.state.cells) {
+                if (cell.type === 'vertex') {
+                    await this.syncVertexToPython(cell);
+                } else if (cell.type === 'edge') {
+                    await this.syncEdgeToPython(cell);
+                }
+            }
+        } catch (error) {
+            console.error("Erreur synchronisation globale vers Python:", error);
+        }
+    }
+
+    async onLabelChange() {
+        // Synchroniser le label modifié avec Python
+        const selectedCell = this.state.selectedCells[0];
+        if (selectedCell) {
+            if (selectedCell.type === 'vertex' && selectedCell.pythonId) {
+                await this.syncVertexToPython(selectedCell);
+            } else if (selectedCell.type === 'edge' && selectedCell.pythonId) {
+                await this.syncEdgeToPython(selectedCell);
+            }
+        }
+        await this.saveDefinition();
     }
 
     initEvents() {
@@ -295,21 +576,79 @@ export class BpmEditorWidget extends Component {
         return this.state.cells.find(c => c.id === id);
     }
 
-    addCell(cell) {
+    async addCell(cell) {
+        // Ajouter la cellule à l'état
         this.state.cells.push(cell);
         this.state.selectedCells = [cell];
-        this.saveDefinition();
+        
+        console.log('📝 Ajout d\'une cellule:', cell.type, cell.shape || '', cell.id);
+        
+        // Si c'est un vertex, créer le nœud Python immédiatement
+        if (cell.type === 'vertex' && this.props.record && this.props.record.resId) {
+            try {
+                await this.syncVertexToPython(cell);
+                console.log('✅ Nœud Python créé/mis à jour:', cell.pythonId, cell.label);
+            } catch (error) {
+                console.error('❌ Erreur création nœud Python:', error);
+            }
+        }
+        
+        // Si c'est un edge, créer l'edge Python (mais seulement si les nœuds source/target existent)
+        if (cell.type === 'edge' && this.props.record && this.props.record.resId) {
+            try {
+                // Attendre que les nœuds source et target soient créés en Python
+                const sourceCell = this.getCellById(cell.source);
+                const targetCell = this.getCellById(cell.target);
+                
+                if (sourceCell && targetCell) {
+                    // Si les nœuds n'ont pas encore d'ID Python, les créer d'abord
+                    if (!sourceCell.pythonId && sourceCell.type === 'vertex') {
+                        await this.syncVertexToPython(sourceCell);
+                    }
+                    if (!targetCell.pythonId && targetCell.type === 'vertex') {
+                        await this.syncVertexToPython(targetCell);
+                    }
+                    
+                    // Maintenant créer l'edge
+                    await this.syncEdgeToPython(cell);
+                    console.log('✅ Edge Python créé/mis à jour:', cell.pythonId, cell.label);
+                }
+            } catch (error) {
+                console.error('❌ Erreur création edge Python:', error);
+            }
+        }
+        
+        // Sauvegarder le JSON (qui contient maintenant toutes les cellules)
+        await this.saveDefinition();
+        console.log('💾 JSON sauvegardé avec', this.state.cells.length, 'cellules');
     }
 
-    deleteCell(cell) {
+    async deleteCell(cell) {
         const index = this.state.cells.findIndex(c => c.id === cell.id);
         if (index !== -1) {
+            // Supprimer le nœud/edge Python si il existe
+            if (cell.pythonId && this.props.record && this.props.record.resId) {
+                if (cell.type === 'vertex') {
+                    try {
+                        await this.orm.unlink('bpm.node', [cell.pythonId]);
+                    } catch (error) {
+                        console.warn('Erreur suppression nœud Python:', error);
+                    }
+                } else if (cell.type === 'edge') {
+                    try {
+                        await this.orm.unlink('bpm.edge', [cell.pythonId]);
+                    } catch (error) {
+                        console.warn('Erreur suppression edge Python:', error);
+                    }
+                }
+            }
+            
             this.state.cells.splice(index, 1);
             this.state.cells = this.state.cells.filter(c => 
                 !(c.type === 'edge' && (c.source === cell.id || c.target === cell.id))
             );
             this.state.selectedCells = this.state.selectedCells.filter(c => c.id !== cell.id);
-            this.saveDefinition();
+            await this.saveDefinition();
         }
     }
 
@@ -430,6 +769,7 @@ export class BpmEditorWidget extends Component {
         e.preventDefault();
         const pt = this.getCanvasPoint(e);
 
+        // Pan avec bouton du milieu ou Shift + clic gauche
         if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
             this.state.isPanning = true;
             this.state.panStart = { x: e.clientX - this.state.panOffset.x, y: e.clientY - this.state.panOffset.y };
@@ -466,8 +806,12 @@ export class BpmEditorWidget extends Component {
             return;
         }
 
-        if (!cell && !connPoint) {
+        // Si on clique sur la grille vide (pas sur un nœud ni un point de connexion), activer le pan
+        if (!cell && !connPoint && e.button === 0) {
             this.state.selectedCells = [];
+            this.state.isPanning = true;
+            this.state.panStart = { x: e.clientX - this.state.panOffset.x, y: e.clientY - this.state.panOffset.y };
+            return;
         }
     }
 
@@ -513,9 +857,23 @@ export class BpmEditorWidget extends Component {
 
         const hovered = this.findCellAt(pt.x, pt.y);
         this.state.hoveredCell = hovered;
+        
+        // Changer le curseur selon le contexte
+        const canvas = this.canvasRef.el;
+        if (canvas) {
+            if (this.state.isPanning) {
+                canvas.style.cursor = 'grabbing';
+            } else if (this.state.isConnecting) {
+                canvas.style.cursor = 'crosshair';
+            } else if (hovered) {
+                canvas.style.cursor = 'move';
+            } else {
+                canvas.style.cursor = 'grab';
+            }
+        }
     }
 
-    onMouseUp(e) {
+    async onMouseUp(e) {
         if (this.state.isConnecting) {
             const pt = this.getCanvasPoint(e);
             const connPoint = this.findConnectionPointAt(pt.x, pt.y);
@@ -562,11 +920,21 @@ export class BpmEditorWidget extends Component {
         if (this.state.isDragging) {
             this.state.isDragging = false;
             this.state.dragStart = null;
-            this.saveDefinition();
+            // Synchroniser les positions des nœuds déplacés
+            for (const cell of this.state.selectedCells) {
+                if (cell.type === 'vertex' && cell.pythonId) {
+                    await this.syncVertexToPython(cell);
+                }
+            }
+            await this.saveDefinition();
         }
 
         if (this.state.isPanning) {
             this.state.isPanning = false;
+            const canvas = this.canvasRef.el;
+            if (canvas) {
+                canvas.style.cursor = 'grab';
+            }
         }
     }
 
@@ -585,18 +953,20 @@ export class BpmEditorWidget extends Component {
         this.state.zoom = newZoom;
     }
 
-    onKeyDown(e) {
+    async onKeyDown(e) {
         if ((e.key === 'Delete' || e.key === 'Backspace') && !e.target.matches('input, textarea')) {
-            this.state.selectedCells.forEach(cell => this.deleteCell(cell));
+            for (const cell of this.state.selectedCells) {
+                await this.deleteCell(cell);
+            }
             this.state.selectedCells = [];
         }
     }
 
-    onPaletteItemClick(type) {
+    async onPaletteItemClick(type) {
         const centerX = (-this.state.panOffset.x / this.state.zoom) + 400;
         const centerY = (-this.state.panOffset.y / this.state.zoom) + 300;
         const shape = this.createShape(type, centerX, centerY);
-        this.addCell(shape);
+        await this.addCell(shape);
     }
 
     getEdgePath(edge) {

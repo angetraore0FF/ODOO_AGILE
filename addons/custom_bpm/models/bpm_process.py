@@ -212,6 +212,71 @@ class BpmProcess(models.Model):
             'context': {'default_process_id': self.id},
         }
     
+    def _sync_json_from_nodes(self):
+        """
+        Synchronise le JSON à partir des nœuds et edges Python.
+        Cette méthode est appelée quand on modifie les nœuds depuis la section "Nœuds".
+        """
+        self.ensure_one()
+        
+        try:
+            cells = []
+            
+            # Créer les cellules pour les nœuds
+            for node in self.node_ids:
+                shape = node._get_shape_from_node_type()
+                
+                # Définir les dimensions selon le type
+                width, height = 120, 80
+                if shape in ('start', 'end'):
+                    width, height = 50, 50
+                elif shape == 'gateway':
+                    width, height = 60, 60
+                
+                cell_id = f'bpm_node_{node.node_id}'
+                cell = {
+                    'id': cell_id,
+                    'type': 'vertex',
+                    'shape': shape,
+                    'x': node.position_x or 0,
+                    'y': node.position_y or 0,
+                    'width': width,
+                    'height': height,
+                    'label': node.name or '',
+                }
+                cells.append(cell)
+            
+            # Créer un map des nœuds par leur ID Python
+            node_map = {node.id: f'bpm_node_{node.node_id}' for node in self.node_ids}
+            
+            # Créer les cellules pour les edges
+            for edge in self.edge_ids:
+                source_python_id = edge.source_node_id.id
+                target_python_id = edge.target_node_id.id
+                
+                if source_python_id in node_map and target_python_id in node_map:
+                    cell_id = f'bpm_edge_{edge.edge_id}'
+                    cell = {
+                        'id': cell_id,
+                        'type': 'edge',
+                        'source': node_map[source_python_id],
+                        'target': node_map[target_python_id],
+                        'label': edge.name or '',
+                    }
+                    cells.append(cell)
+            
+            # Sauvegarder le JSON
+            data = {
+                'cells': cells,
+                'version': '1.0'
+            }
+            self.json_definition = json.dumps(data)
+            
+            _logger.info('JSON synchronisé depuis les nœuds Python pour le processus %s', self.name)
+            
+        except Exception as e:
+            _logger.error('Erreur lors de la synchronisation JSON depuis les nœuds: %s', str(e))
+    
     def action_launch_process(self):
         """Action pour lancer le processus (sera appelée depuis le modèle cible)"""
         self.ensure_one()
@@ -544,6 +609,50 @@ class BpmNode(models.Model):
     _sql_constraints = [
         ('node_id_unique', 'unique(process_id, node_id)', 'L\'ID du nœud doit être unique dans un processus'),
     ]
+    
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Surcharge pour synchroniser avec le JSON lors de la création"""
+        nodes = super().create(vals_list)
+        for node in nodes:
+            node._sync_to_json()
+        return nodes
+    
+    def write(self, vals):
+        """Surcharge pour synchroniser avec le JSON lors de la modification"""
+        result = super().write(vals)
+        # Synchroniser si les champs pertinents ont changé
+        if any(field in vals for field in ['name', 'node_type', 'position_x', 'position_y']):
+            for node in self:
+                node._sync_to_json()
+        return result
+    
+    def unlink(self):
+        """Surcharge pour synchroniser avec le JSON lors de la suppression"""
+        process_ids = self.mapped('process_id').ids
+        result = super().unlink()
+        # Synchroniser le JSON pour tous les processus affectés
+        for process_id in process_ids:
+            process = self.env['bpm.process'].browse(process_id)
+            if process.exists():
+                process._sync_json_from_nodes()
+        return result
+    
+    def _sync_to_json(self):
+        """Synchronise ce nœud avec le JSON du processus"""
+        if not self.process_id:
+            return
+        self.process_id._sync_json_from_nodes()
+    
+    def _get_shape_from_node_type(self):
+        """Retourne la forme graphique correspondant au type de nœud"""
+        mapping = {
+            'start': 'start',
+            'task': 'task',
+            'gateway': 'gateway',
+            'end': 'end',
+        }
+        return mapping.get(self.node_type, 'task')
 
 
 class BpmEdge(models.Model):
@@ -618,6 +727,40 @@ class BpmEdge(models.Model):
         """Génère un ID unique pour la transition"""
         import uuid
         return str(uuid.uuid4())[:8]
+    
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Surcharge pour synchroniser avec le JSON lors de la création"""
+        edges = super().create(vals_list)
+        for edge in edges:
+            edge._sync_to_json()
+        return edges
+    
+    def write(self, vals):
+        """Surcharge pour synchroniser avec le JSON lors de la modification"""
+        result = super().write(vals)
+        # Synchroniser si les champs pertinents ont changé
+        if any(field in vals for field in ['name', 'source_node_id', 'target_node_id']):
+            for edge in self:
+                edge._sync_to_json()
+        return result
+    
+    def unlink(self):
+        """Surcharge pour synchroniser avec le JSON lors de la suppression"""
+        process_ids = self.mapped('process_id').ids
+        result = super().unlink()
+        # Synchroniser le JSON pour tous les processus affectés
+        for process_id in process_ids:
+            process = self.env['bpm.process'].browse(process_id)
+            if process.exists():
+                process._sync_json_from_nodes()
+        return result
+    
+    def _sync_to_json(self):
+        """Synchronise cette transition avec le JSON du processus"""
+        if not self.process_id:
+            return
+        self.process_id._sync_json_from_nodes()
     
     @api.constrains('source_node_id', 'target_node_id')
     def _check_nodes_same_process(self):

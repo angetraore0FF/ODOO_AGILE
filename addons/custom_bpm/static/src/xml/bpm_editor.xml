@@ -31,49 +31,51 @@
                 </div>
             </div>
 
-            <!-- Conteneur principal -->
-            <div class="bpm_main_container">
-                <!-- Palette latérale - masquable -->
-                <div class="bpm_palette" t-att-class="{'collapsed': state.paletteCollapsed}">
-                    <div class="bpm_palette_header">
-                        <i class="fa fa-shapes me-2"/>
-                        <strong>Formes BPMN</strong>
+            <!-- Conteneur principal avec palette, canvas et panneau de propriétés -->
+            <div class="bpm_content_wrapper">
+                <!-- Conteneur principal -->
+                <div class="bpm_main_container">
+                    <!-- Palette latérale - masquable -->
+                    <div class="bpm_palette" t-att-class="{'collapsed': state.paletteCollapsed}">
+                        <div class="bpm_palette_header">
+                            <i class="fa fa-shapes me-2"/>
+                            <strong>Formes BPMN</strong>
+                        </div>
+                        <div class="bpm_palette_items">
+                            <div class="bpm_palette_item" 
+                                 t-on-click="() => this.onPaletteItemClick('start')"
+                                 title="Début">
+                                <div class="bpm_palette_shape bpm_shape_start"/>
+                                <span>Début</span>
+                            </div>
+                            <div class="bpm_palette_item" 
+                                 t-on-click="() => this.onPaletteItemClick('task')"
+                                 title="Tâche">
+                                <div class="bpm_palette_shape bpm_shape_task"/>
+                                <span>Tâche</span>
+                            </div>
+                            <div class="bpm_palette_item" 
+                                 t-on-click="() => this.onPaletteItemClick('gateway')"
+                                 title="Décision">
+                                <div class="bpm_palette_shape bpm_shape_gateway"/>
+                                <span>Décision</span>
+                            </div>
+                            <div class="bpm_palette_item" 
+                                 t-on-click="() => this.onPaletteItemClick('end')"
+                                 title="Fin">
+                                <div class="bpm_palette_shape bpm_shape_end"/>
+                                <span>Fin</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="bpm_palette_items">
-                        <div class="bpm_palette_item" 
-                             t-on-click="() => this.onPaletteItemClick('start')"
-                             title="Début">
-                            <div class="bpm_palette_shape bpm_shape_start"/>
-                            <span>Début</span>
-                        </div>
-                        <div class="bpm_palette_item" 
-                             t-on-click="() => this.onPaletteItemClick('task')"
-                             title="Tâche">
-                            <div class="bpm_palette_shape bpm_shape_task"/>
-                            <span>Tâche</span>
-                        </div>
-                        <div class="bpm_palette_item" 
-                             t-on-click="() => this.onPaletteItemClick('gateway')"
-                             title="Décision">
-                            <div class="bpm_palette_shape bpm_shape_gateway"/>
-                            <span>Décision</span>
-                        </div>
-                        <div class="bpm_palette_item" 
-                             t-on-click="() => this.onPaletteItemClick('end')"
-                             title="Fin">
-                            <div class="bpm_palette_shape bpm_shape_end"/>
-                            <span>Fin</span>
-                        </div>
+                    
+                    <!-- Bouton pour masquer/afficher la palette -->
+                    <div class="bpm_palette_toggle" t-on-click="() => this.togglePalette()">
+                        <i class="fa" t-att-class="state.paletteCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'"/>
                     </div>
-                </div>
-                
-                <!-- Bouton pour masquer/afficher la palette -->
-                <div class="bpm_palette_toggle" t-on-click="() => this.togglePalette()">
-                    <i class="fa" t-att-class="state.paletteCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'"/>
-                </div>
 
-                <!-- Zone de dessin - prend tout l'espace -->
-                <div class="bpm_canvas_container">
+                    <!-- Zone de dessin - prend tout l'espace -->
+                    <div class="bpm_canvas_container">
                     <svg t-ref="canvas" 
                          class="bpm_canvas"
                          t-att-class="{'connecting': state.isConnecting, 'panning': state.isPanning}"
@@ -96,8 +98,8 @@
 
                         <!-- Groupe avec transformation (pan et zoom) -->
                         <g t-att-transform="`translate(${state.panOffset.x}, ${state.panOffset.y}) scale(${state.zoom})`">
-                            <!-- Grille -->
-                            <rect width="10000" height="10000" fill="url(#grid)" t-if="state.showGrid"/>
+                            <!-- Grille - grande taille pour permettre un grand espace de travail -->
+                            <rect width="50000" height="50000" x="-25000" y="-25000" fill="url(#grid)" t-if="state.showGrid"/>
 
                             <!-- Connexions (edges) -->
                             <g class="bpm_edges">
@@ -285,11 +287,11 @@
                             </g>
                         </g>
                     </svg>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Panneau de propriétés pour les éléments sélectionnés -->
-            <div class="bpm_properties_panel" t-if="state.selectedCells.length === 1">
+                
+                <!-- Panneau de propriétés pour les éléments sélectionnés -->
+                <div class="bpm_properties_panel" t-if="state.selectedCells.length === 1">
                 <t t-set="selectedCell" t-value="state.selectedCells[0]"/>
                 <div class="bpm_properties_header">
                     <h5>
@@ -303,7 +305,7 @@
                         <input type="text" 
                                class="form-control form-control-sm" 
                                t-model="selectedCell.label"
-                               t-on-input="() => this.saveDefinition()"
+                               t-on-input="() => this.onLabelChange()"
                                placeholder="Nom de l'élément"/>
                     </div>
                     <t t-if="selectedCell.type === 'edge'">
@@ -318,6 +320,7 @@
                         </div>
                     </t>
                 </div>
+            </div>
             </div>
         </div>
     </t>

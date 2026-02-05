@@ -85,7 +85,7 @@
                     <!-- Éditeur graphique de workflow - prend tout l'espace disponible -->
                     <notebook>
                         <page string="Éditeur de Workflow" name="editor">
-                            <div class="bpm_editor_container" style="height: 70vh; min-height: 600px; width: 100%;">
+                            <div class="bpm_editor_container" style="height: 70vh; min-height: 600px; width: 100%; max-width: 100%;">
                                 <field name="json_definition" widget="bpm_editor" options="{'full_width': true}"/>
                             </div>
                         </page>
