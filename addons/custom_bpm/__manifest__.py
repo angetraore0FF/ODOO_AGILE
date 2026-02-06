@@ -34,15 +34,17 @@ Architecture :
     'data': [
         'security/ir.model.access.csv',
         'data/bpm_template_data.xml',
+        'data/bpm_process_example.xml',
+        'data/bpm_demo_data.xml',
         'views/bpm_views.xml',
         'views/bpm_menu.xml',
         'views/bpm_template_views.xml',
     ],
     'assets': {
         'web.assets_backend': [
-            'custom_bpm/static/src/css/bpm_editor.css',
-            'custom_bpm/static/src/js/bpm_editor.js',
-            'custom_bpm/static/src/xml/bpm_editor.xml',
+            'custom_bpm/static/src/css/bpm_graph_editor.css',
+            'custom_bpm/static/src/js/bpm_graph_editor.js',
+            'custom_bpm/static/src/xml/bpm_graph_editor.xml',
         ],
     },
     'installable': True,

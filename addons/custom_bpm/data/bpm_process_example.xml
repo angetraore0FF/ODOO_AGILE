@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- 
+            EXEMPLE DE PROCESSUS BPM : VALIDATION DE COMMANDE DE VENTE
+            ============================================================
+            
+            Ce processus illustre un workflow complet de validation de commande :
+            1. Début : Commande créée
+            2. Tâche : Vérification du stock
+            3. Décision : Stock disponible ?
+               - OUI → Confirmation de la commande
+               - NON → Demande d'approvisionnement
+            4. Tâche : Création de la facture
+            5. Fin : Commande validée
+            
+            Pour tester :
+            - Créer une commande de vente (sale.order)
+            - Créer une instance BPM manuellement ou activer auto_start
+            - Exécuter les étapes via "Étape suivante"
+        -->
+
+        <!-- Modèle cible : Commande de vente -->
+        <record id="bpm_process_example_sale_order" model="bpm.process">
+            <field name="name">Validation de Commande de Vente</field>
+            <field name="description">Processus de validation d'une commande de vente avec vérification du stock et création de facture</field>
+            <field name="model_id" ref="sale.model_sale_order"/>
+            <field name="version">1.0</field>
+            <field name="active">True</field>
+            <field name="auto_start">False</field>
+        </record>
+
+        <!-- NŒUD 1 : DÉBUT -->
+        <record id="bpm_node_start_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Début - Commande créée</field>
+            <field name="node_type">start</field>
+            <field name="node_id">bpm_node_start_001</field>
+            <field name="sequence">10</field>
+            <field name="position_x">100</field>
+            <field name="position_y">100</field>
+            <field name="description">Point de départ du processus. La commande vient d'être créée.</field>
+        </record>
+
+        <!-- NŒUD 2 : TÂCHE - Vérification du stock -->
+        <record id="bpm_node_check_stock_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Vérification du stock</field>
+            <field name="node_type">task</field>
+            <field name="node_id">bpm_node_task_001</field>
+            <field name="sequence">20</field>
+            <field name="position_x">300</field>
+            <field name="position_y">100</field>
+            <field name="description">Vérifie la disponibilité des produits en stock</field>
+            <field name="action_code"># Code Python optionnel pour vérifier le stock
+# Exemple : logique de vérification
+# record = l'enregistrement sale.order
+pass</field>
+        </record>
+
+        <!-- NŒUD 3 : DÉCISION - Stock disponible ? -->
+        <record id="bpm_node_stock_decision_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Stock disponible ?</field>
+            <field name="node_type">gateway</field>
+            <field name="node_id">bpm_node_gateway_001</field>
+            <field name="sequence">30</field>
+            <field name="position_x">500</field>
+            <field name="position_y">100</field>
+            <field name="description">Décision : le stock est-il suffisant pour honorer la commande ?</field>
+        </record>
+
+        <!-- NŒUD 4 : TÂCHE - Confirmation de la commande -->
+        <record id="bpm_node_confirm_order_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Confirmer la commande</field>
+            <field name="node_type">task</field>
+            <field name="node_id">bpm_node_task_002</field>
+            <field name="sequence">40</field>
+            <field name="position_x">700</field>
+            <field name="position_y">50</field>
+            <field name="auto_action">confirm_order</field>
+            <field name="description">Confirme la commande de vente (action_confirm)</field>
+        </record>
+
+        <!-- NŒUD 5 : TÂCHE - Demande d'approvisionnement -->
+        <record id="bpm_node_request_supply_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Demander approvisionnement</field>
+            <field name="node_type">task</field>
+            <field name="node_id">bpm_node_task_003</field>
+            <field name="sequence">50</field>
+            <field name="position_x">700</field>
+            <field name="position_y">150</field>
+            <field name="description">Crée une demande d'approvisionnement si le stock est insuffisant</field>
+            <field name="action_code"># Code Python pour créer une demande d'approvisionnement
+# Exemple :
+# record.message_post(body="Demande d'approvisionnement créée")
+pass</field>
+        </record>
+
+        <!-- NŒUD 6 : TÂCHE - Création de la facture -->
+        <record id="bpm_node_create_invoice_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Créer la facture</field>
+            <field name="node_type">task</field>
+            <field name="node_id">bpm_node_task_004</field>
+            <field name="sequence">60</field>
+            <field name="position_x">900</field>
+            <field name="position_y">50</field>
+            <field name="auto_action">create_invoice</field>
+            <field name="description">Crée la facture pour la commande confirmée</field>
+        </record>
+
+        <!-- NŒUD 7 : FIN - Commande validée -->
+        <record id="bpm_node_end_success_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Commande validée</field>
+            <field name="node_type">end</field>
+            <field name="node_id">bpm_node_end_001</field>
+            <field name="sequence">70</field>
+            <field name="position_x">1100</field>
+            <field name="position_y">50</field>
+            <field name="end_type">success</field>
+            <field name="end_action">notify</field>
+            <field name="description">Le processus se termine avec succès. La commande est validée et facturée.</field>
+        </record>
+
+        <!-- NŒUD 8 : FIN - Commande en attente -->
+        <record id="bpm_node_end_pending_example" model="bpm.node">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Commande en attente</field>
+            <field name="node_type">end</field>
+            <field name="node_id">bpm_node_end_002</field>
+            <field name="sequence">80</field>
+            <field name="position_x">900</field>
+            <field name="position_y">150</field>
+            <field name="end_type">failure</field>
+            <field name="end_action">notify</field>
+            <field name="description">Le processus se termine en attente d'approvisionnement.</field>
+        </record>
+
+        <!-- TRANSITIONS -->
+        
+        <!-- Transition 1 : Début → Vérification du stock -->
+        <record id="bpm_edge_start_to_check_stock" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Démarrer vérification</field>
+            <field name="source_node_id" ref="bpm_node_start_example"/>
+            <field name="target_node_id" ref="bpm_node_check_stock_example"/>
+            <field name="edge_id">bpm_edge_001</field>
+            <field name="sequence">10</field>
+            <field name="condition_type">always</field>
+        </record>
+
+        <!-- Transition 2 : Vérification → Décision -->
+        <record id="bpm_edge_check_to_decision" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Vers décision</field>
+            <field name="source_node_id" ref="bpm_node_check_stock_example"/>
+            <field name="target_node_id" ref="bpm_node_stock_decision_example"/>
+            <field name="edge_id">bpm_edge_002</field>
+            <field name="sequence">20</field>
+            <field name="condition_type">always</field>
+        </record>
+
+        <!-- Transition 3 : Décision → Confirmation (OUI - stock disponible) -->
+        <record id="bpm_edge_decision_to_confirm" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">OUI - Stock disponible</field>
+            <field name="source_node_id" ref="bpm_node_stock_decision_example"/>
+            <field name="target_node_id" ref="bpm_node_confirm_order_example"/>
+            <field name="edge_id">bpm_edge_003</field>
+            <field name="sequence">30</field>
+            <field name="condition_type">code</field>
+            <field name="condition"><![CDATA[# Condition : vérifie si le montant total est supérieur à 0
+# (simulation : dans un vrai cas, on vérifierait le stock réel)
+record.amount_total > 0]]></field>
+        </record>
+
+        <!-- Transition 4 : Décision → Demande approvisionnement (NON - stock insuffisant) -->
+        <record id="bpm_edge_decision_to_request" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">NON - Stock insuffisant</field>
+            <field name="source_node_id" ref="bpm_node_stock_decision_example"/>
+            <field name="target_node_id" ref="bpm_node_request_supply_example"/>
+            <field name="edge_id">bpm_edge_004</field>
+            <field name="sequence">40</field>
+            <field name="condition_type">code</field>
+            <field name="condition"><![CDATA[# Condition inverse : si le montant est 0 ou négatif
+# (simulation : dans un vrai cas, on vérifierait le stock réel)
+record.amount_total <= 0]]></field>
+        </record>
+
+        <!-- Transition 5 : Confirmation → Création facture -->
+        <record id="bpm_edge_confirm_to_invoice" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Créer facture</field>
+            <field name="source_node_id" ref="bpm_node_confirm_order_example"/>
+            <field name="target_node_id" ref="bpm_node_create_invoice_example"/>
+            <field name="edge_id">bpm_edge_005</field>
+            <field name="sequence">50</field>
+            <field name="condition_type">always</field>
+        </record>
+
+        <!-- Transition 6 : Création facture → Fin (Succès) -->
+        <record id="bpm_edge_invoice_to_end_success" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Terminer avec succès</field>
+            <field name="source_node_id" ref="bpm_node_create_invoice_example"/>
+            <field name="target_node_id" ref="bpm_node_end_success_example"/>
+            <field name="edge_id">bpm_edge_006</field>
+            <field name="sequence">60</field>
+            <field name="condition_type">always</field>
+        </record>
+
+        <!-- Transition 7 : Demande approvisionnement → Fin (En attente) -->
+        <record id="bpm_edge_request_to_end_pending" model="bpm.edge">
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="name">Terminer en attente</field>
+            <field name="source_node_id" ref="bpm_node_request_supply_example"/>
+            <field name="target_node_id" ref="bpm_node_end_pending_example"/>
+            <field name="edge_id">bpm_edge_007</field>
+            <field name="sequence">70</field>
+            <field name="condition_type">always</field>
+        </record>
+
+    </data>
+</odoo>

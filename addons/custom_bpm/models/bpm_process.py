@@ -613,9 +613,28 @@ class BpmNode(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         """Surcharge pour synchroniser avec le JSON lors de la création"""
+        # Valider que process_id est un entier valide
+        for vals in vals_list:
+            if 'process_id' in vals:
+                process_id = vals['process_id']
+                if isinstance(process_id, str):
+                    # Si c'est une chaîne, essayer de la convertir en entier
+                    try:
+                        vals['process_id'] = int(process_id)
+                    except (ValueError, TypeError):
+                        raise ValidationError(_("process_id doit être un entier valide, reçu: %s") % process_id)
+                elif not isinstance(process_id, int):
+                    raise ValidationError(_("process_id doit être un entier, reçu: %s") % type(process_id).__name__)
+            
+            # S'assurer que node_id est généré si non fourni
+            if 'node_id' not in vals or not vals.get('node_id'):
+                vals['node_id'] = self._generate_node_id()
+        
         nodes = super().create(vals_list)
         for node in nodes:
             node._sync_to_json()
+        
+        _logger.info(f"Création de {len(nodes)} nœud(s) pour le processus {nodes[0].process_id.id if nodes else 'N/A'}")
         return nodes
     
     def write(self, vals):
@@ -731,6 +750,18 @@ class BpmEdge(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         """Surcharge pour synchroniser avec le JSON lors de la création"""
+        # Valider que process_id est un entier valide
+        for vals in vals_list:
+            if 'process_id' in vals:
+                process_id = vals['process_id']
+                if isinstance(process_id, str):
+                    # Si c'est une chaîne, essayer de la convertir en entier
+                    try:
+                        vals['process_id'] = int(process_id)
+                    except (ValueError, TypeError):
+                        raise ValidationError(_("process_id doit être un entier valide, reçu: %s") % process_id)
+                elif not isinstance(process_id, int):
+                    raise ValidationError(_("process_id doit être un entier, reçu: %s") % type(process_id).__name__)
         edges = super().create(vals_list)
         for edge in edges:
             edge._sync_to_json()

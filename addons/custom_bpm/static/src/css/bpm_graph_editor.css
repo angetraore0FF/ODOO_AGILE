@@ -1,0 +1,398 @@
+/* ============================================
+   ÉDITEUR GRAPHIQUE BPM - STYLES
+   ============================================ */
+
+/* 1. CONTENEUR PRINCIPAL */
+.o_bpm_graph_editor {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 600px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* 2. BARRE D'OUTILS */
+.o_bpm_toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #2d2d2d;
+    border-bottom: 1px solid #404040;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.o_bpm_toolbar .btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.o_bpm_toolbar .btn-secondary {
+    background: #404040;
+    color: #e0e0e0;
+    border-color: #505050;
+}
+
+.o_bpm_toolbar .btn-secondary:hover {
+    background: #505050;
+    border-color: #606060;
+    transform: translateY(-1px);
+}
+
+.o_bpm_toolbar .btn-danger {
+    background: #d32f2f;
+    color: white;
+    border-color: #b71c1c;
+}
+
+.o_bpm_toolbar .btn-danger:hover {
+    background: #c62828;
+    transform: translateY(-1px);
+}
+
+.o_bpm_toolbar .btn-danger:disabled {
+    background: #5a5a5a;
+    color: #888;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* 3. CONTROLES DE ZOOM/PAN */
+.o_bpm_controls {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    align-items: center;
+}
+
+.o_bpm_controls .btn {
+    padding: 6px 12px;
+    min-width: 36px;
+    background: #404040;
+    color: #e0e0e0;
+    border: 1px solid #505050;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.o_bpm_controls .btn:hover {
+    background: #505050;
+}
+
+.o_bpm_zoom_info {
+    color: #e0e0e0;
+    font-size: 12px;
+    padding: 0 8px;
+    min-width: 60px;
+    text-align: center;
+}
+
+/* 4. ZONE DE DESSIN (CANVAS) */
+.o_bpm_canvas_container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #1a1a1a;
+    cursor: grab;
+}
+
+.o_bpm_canvas_container.panning {
+    cursor: grabbing;
+}
+
+.o_bpm_canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* 5. GRILLE */
+.o_bpm_grid {
+    fill: none;
+    stroke: #4a4a4a;
+    stroke-width: 0.5;
+}
+
+/* 6. NŒUDS */
+.o_bpm_node {
+    cursor: move;
+    transition: all 0.2s ease;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.o_bpm_node:hover {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+}
+
+.o_bpm_node.o_bpm_selected {
+    filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.8));
+    stroke: #2196F3 !important;
+    stroke-width: 3 !important;
+}
+
+.o_bpm_node.o_bpm_hovered {
+    filter: drop-shadow(0 0 4px rgba(33, 150, 243, 0.5));
+}
+
+/* Styles par type de nœud */
+.o_bpm_node_start {
+    fill: #4caf50;
+    stroke: #388e3c;
+    stroke-width: 2;
+}
+
+.o_bpm_node_end {
+    fill: #f44336;
+    stroke: #c62828;
+    stroke-width: 2;
+}
+
+.o_bpm_node_task {
+    fill: #2196f3;
+    stroke: #1565c0;
+    stroke-width: 2;
+}
+
+.o_bpm_node_gateway {
+    fill: #ff9800;
+    stroke: #e65100;
+    stroke-width: 2;
+}
+
+/* Texte des nœuds */
+.o_bpm_node text {
+    fill: white;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 500;
+    pointer-events: none;
+    user-select: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* 7. TRANSITIONS (ARÊTES) */
+.o_bpm_edge {
+    stroke: #757575;
+    stroke-width: 2;
+    fill: none;
+    cursor: pointer;
+    transition: stroke-width 0.2s ease;
+}
+
+.o_bpm_edge:hover {
+    stroke: #2196F3;
+    stroke-width: 3;
+}
+
+.o_bpm_edge.o_bpm_selected {
+    stroke: #2196F3;
+    stroke-width: 3;
+}
+
+/* Flèche de transition */
+.o_bpm_edge_marker {
+    fill: #757575;
+}
+
+.o_bpm_edge:hover + .o_bpm_edge_marker,
+.o_bpm_edge.o_bpm_selected + .o_bpm_edge_marker {
+    fill: #2196F3;
+}
+
+/* 8. POINTS DE CONNEXION (style draw.io) */
+.o_bpm_connection_point {
+    fill: #2196F3;
+    stroke: white;
+    stroke-width: 2;
+    r: 5;
+    cursor: crosshair;
+    opacity: 0;
+    transition: all 0.15s ease;
+    pointer-events: all;
+}
+
+.o_bpm_connection_point.visible {
+    opacity: 1;
+}
+
+.o_bpm_node:hover .o_bpm_connection_point.visible,
+.o_bpm_canvas_container.connecting .o_bpm_connection_point.visible {
+    opacity: 1;
+}
+
+.o_bpm_connection_point:hover,
+.o_bpm_connection_point.highlighted {
+    r: 8;
+    fill: #4caf50;
+    stroke: white;
+    stroke-width: 3;
+    filter: drop-shadow(0 0 4px rgba(76, 175, 80, 0.8));
+    opacity: 1;
+}
+
+.o_bpm_canvas_container.connecting .o_bpm_node:not(.o_bpm_node_connecting) .o_bpm_connection_point {
+    fill: #666;
+}
+
+.o_bpm_canvas_container.connecting .o_bpm_node.o_bpm_node_connecting .o_bpm_connection_point {
+    fill: #4caf50;
+    opacity: 1;
+    r: 7;
+}
+
+/* 9. CONNEXION TEMPORAIRE (PENDANT LE DRAG) */
+.o_bpm_temp_connection {
+    stroke: #4caf50;
+    stroke-width: 3;
+    stroke-dasharray: 8,4;
+    fill: none;
+    pointer-events: none;
+    filter: drop-shadow(0 0 4px rgba(76, 175, 80, 0.8));
+    animation: pulse-connection 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-connection {
+    0%, 100% { 
+        stroke-opacity: 1;
+        filter: drop-shadow(0 0 4px rgba(76, 175, 80, 0.8));
+    }
+    50% { 
+        stroke-opacity: 0.6;
+        filter: drop-shadow(0 0 8px rgba(76, 175, 80, 1));
+    }
+}
+
+/* 10. FEEDBACK VISUEL */
+.o_bpm_hover_overlay {
+    fill: rgba(33, 150, 243, 0.1);
+    stroke: #2196F3;
+    stroke-width: 2;
+    stroke-dasharray: 4,4;
+    pointer-events: none;
+}
+
+/* 11. INSTRUCTIONS */
+.o_bpm_instructions {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    background: rgba(45, 45, 45, 0.95);
+    color: #e0e0e0;
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid #404040;
+    z-index: 10;
+    max-width: 300px;
+}
+
+.o_bpm_instructions h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: #fff;
+}
+
+.o_bpm_instructions ul {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.o_bpm_instructions li {
+    margin: 4px 0;
+}
+
+/* 12. RACCOURCIS CLAVIER */
+.o_bpm_shortcuts {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(45, 45, 45, 0.95);
+    color: #e0e0e0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    border: 1px solid #404040;
+    z-index: 10;
+}
+
+.o_bpm_shortcuts kbd {
+    background: #1a1a1a;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid #404040;
+    font-family: monospace;
+    font-size: 10px;
+    margin: 0 2px;
+}
+
+/* 13. MODE CONNEXION */
+.o_bpm_canvas_container.connecting {
+    cursor: crosshair;
+}
+
+.o_bpm_canvas_container.connecting .o_bpm_node {
+    cursor: crosshair;
+}
+
+.o_bpm_canvas_container.connecting .o_bpm_node:not(.o_bpm_node_connecting) {
+    opacity: 0.6;
+}
+
+.o_bpm_canvas_container.connecting .o_bpm_node.o_bpm_node_connecting {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(76, 175, 80, 0.8));
+}
+
+/* 14. RESPONSIVE */
+@media (max-width: 768px) {
+    .o_bpm_toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .o_bpm_controls {
+        margin-left: 0;
+        justify-content: center;
+    }
+    
+    .o_bpm_instructions,
+    .o_bpm_shortcuts {
+        display: none;
+    }
+}
+
+/* 15. ANIMATIONS */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.o_bpm_node_connecting {
+    animation: pulse 1s infinite;
+}
+
+/* 16. SCROLLBAR PERSONNALISÉE */
+.o_bpm_canvas_container::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.o_bpm_canvas_container::-webkit-scrollbar-track {
+    background: #2d2d2d;
+}
+
+.o_bpm_canvas_container::-webkit-scrollbar-thumb {
+    background: #505050;
+    border-radius: 6px;
+}
+
+.o_bpm_canvas_container::-webkit-scrollbar-thumb:hover {
+    background: #606060;
+}

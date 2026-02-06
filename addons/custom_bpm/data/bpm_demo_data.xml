@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- 
+            DONNÉES DE DÉMO POUR TESTER LE PROCESSUS BPM
+            ===============================================
+            
+            Ce fichier crée des données de démo pour tester le processus :
+            - Des commandes de vente avec différents montants
+            - Des instances BPM dans différents états
+            - Des partenaires de test si nécessaire
+            
+            Pour utiliser ces données :
+            1. Mettre à jour le module custom_bpm
+            2. Les commandes de vente seront créées automatiquement
+            3. Les instances BPM seront créées et prêtes à être testées
+        -->
+
+        <!-- Partenaires de test (si pas déjà existants) -->
+        <record id="bpm_demo_partner_1" model="res.partner">
+            <field name="name">Client Démo - Entreprise ABC</field>
+            <field name="is_company">True</field>
+            <field name="email">client.abc@demo.com</field>
+            <field name="phone">+33 1 23 45 67 89</field>
+            <field name="street">123 Rue de la Démo</field>
+            <field name="city">Paris</field>
+            <field name="zip">75001</field>
+            <field name="country_id" ref="base.fr"/>
+        </record>
+
+        <record id="bpm_demo_partner_2" model="res.partner">
+            <field name="name">Client Démo - Société XYZ</field>
+            <field name="is_company">True</field>
+            <field name="email">client.xyz@demo.com</field>
+            <field name="phone">+33 1 98 76 54 32</field>
+            <field name="street">456 Avenue du Test</field>
+            <field name="city">Lyon</field>
+            <field name="zip">69001</field>
+            <field name="country_id" ref="base.fr"/>
+        </record>
+
+        <!-- 
+            INSTANCES BPM DE DÉMO
+            =====================
+            
+            NOTE IMPORTANTE : Ces instances BPM sont créées sans référencer de commandes de vente spécifiques.
+            Pour les utiliser :
+            1. Créez des commandes de vente dans l'interface Odoo (Ventes > Commandes > Nouveau)
+            2. Notez leurs IDs (ex: SO001 = ID 1, SO002 = ID 2, etc.)
+            3. Modifiez les res_id ci-dessous avec les IDs réels de vos commandes
+            4. Ou créez les instances BPM manuellement depuis l'interface
+            
+            Alternative : Créez les instances directement depuis l'interface Odoo en suivant le README.
+        -->
+
+        <!-- Instance 1 : En brouillon (draft) - Prête à démarrer -->
+        <!-- MODIFIER res_id avec l'ID d'une commande de vente existante -->
+        <record id="bpm_demo_instance_1" model="bpm.instance">
+            <field name="name">Instance Démo - Commande Test 1</field>
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="res_model">sale.order</field>
+            <field name="res_id" eval="1"/>
+            <field name="state">draft</field>
+        </record>
+
+        <!-- Instance 2 : En cours (running) - Au nœud de vérification -->
+        <!-- MODIFIER res_id avec l'ID d'une commande de vente existante -->
+        <record id="bpm_demo_instance_2" model="bpm.instance">
+            <field name="name">Instance Démo - Commande Test 2 (En cours)</field>
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="res_model">sale.order</field>
+            <field name="res_id" eval="1"/>
+            <field name="state">running</field>
+            <field name="current_node_id" ref="bpm_node_check_stock_example"/>
+        </record>
+
+        <!-- Instance 3 : En cours - Au nœud de décision -->
+        <!-- MODIFIER res_id avec l'ID d'une commande de vente existante -->
+        <record id="bpm_demo_instance_3" model="bpm.instance">
+            <field name="name">Instance Démo - Commande Test 3 (Décision)</field>
+            <field name="process_id" ref="bpm_process_example_sale_order"/>
+            <field name="res_model">sale.order</field>
+            <field name="res_id" eval="1"/>
+            <field name="state">running</field>
+            <field name="current_node_id" ref="bpm_node_stock_decision_example"/>
+        </record>
+
+    </data>
+</odoo>
