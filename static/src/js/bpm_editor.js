@@ -1,7 +1,7 @@
 /** @odoo-module **/
 
 import { registry } from "@web/core/registry";
-import { Component, useState, onMounted, onWillUnmount, useRef } from "@odoo/owl";
+import { Component, useState, onMounted, onWillUnmount, useEffect, useRef } from "@odoo/owl";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
 /**
@@ -19,12 +19,12 @@ export class BpmEditorWidget extends Component {
         this.state = useState({
             nodes: [],
             edges: [],
-            selectedNode: null,
+            selectedNodeIndex: null,
             selectedEdge: null,
             isDragging: false,
             dragOffset: { x: 0, y: 0 },
             isConnecting: false,
-            connectionStart: null,
+            connectionStartIndex: null,
             isLoading: true,
             // Pan (déplacement du canvas)
             isPanning: false,
@@ -33,6 +33,23 @@ export class BpmEditorWidget extends Component {
             // Zoom
             zoom: 1.0,
         });
+        
+        // Système de détection du double-clic
+        this.lastClickTime = 0;
+        this.lastClickedNode = null;
+        this.clickTimer = null;
+        
+        // Getter pour selectedNode basé sur l'index
+        Object.defineProperty(this.state, 'selectedNode', {
+            get: () => this.state.selectedNodeIndex !== null ? this.state.nodes[this.state.selectedNodeIndex] : null
+        });
+        Object.defineProperty(this.state, 'connectionStart', {
+            get: () => this.state.connectionStartIndex !== null ? this.state.nodes[this.state.connectionStartIndex] : null
+        });
+
+        // DRAW.IO STYLE: Créer les bound methods ICI, pas dans initializeCanvas
+        this.handleMouseMove = this.onMouseMove.bind(this);
+        this.handleMouseUp = this.onMouseUp.bind(this);
 
         onMounted(async () => {
             // Charge la définition depuis la base de données
@@ -40,6 +57,16 @@ export class BpmEditorWidget extends Component {
             this.state.isLoading = false;
             this.initializeCanvas();
         });
+
+        // Surveillance automatique des changements de nœuds
+        useEffect(
+            () => {
+                // Se déclenche quand les nœuds changent (ajout/suppression depuis l'onglet Nœuds)
+                console.log('🔄 Détection de changement dans les nœuds, rechargement...');
+                this.loadDefinition();
+            },
+            () => [this.props.record.data.noeud_ids?.length, JSON.stringify(this.props.record.data.noeud_ids)]
+        );
 
         onWillUnmount(() => {
             this.cleanup();
@@ -50,12 +77,14 @@ export class BpmEditorWidget extends Component {
      * Charge la définition depuis les enregistrements bpm.node et bpm.edge
      */
     async loadDefinition() {
-        const processId = this.props.record.resId;
+        const processId = this.props.record.resId || this.props.record.data.id;
         if (!processId) {
+            console.warn('❌ Pas de processId disponible');
             this.state.nodes = [];
             this.state.edges = [];
             return;
         }
+        console.log('✅ Chargement pour processId:', processId);
 
         try {
             // Charge les nœuds depuis bpm.node
@@ -110,11 +139,12 @@ export class BpmEditorWidget extends Component {
      * Sauvegarde les nœuds et edges dans la base de données
      */
     async saveDefinition() {
-        const processId = this.props.record.resId;
+        const processId = this.props.record.resId || this.props.record.data.id;
         if (!processId) {
-            console.warn("Impossible de sauvegarder: pas de processId");
+            console.warn("❌ Impossible de sauvegarder: pas de processId");
             return;
         }
+        console.log('💾 Sauvegarde pour processId:', processId);
 
         try {
             // 1. Synchronise les nœuds
@@ -220,10 +250,8 @@ export class BpmEditorWidget extends Component {
         const canvas = this.canvasRef.el;
         if (!canvas) return;
 
-        // Ajoute les gestionnaires d'événements
+        // DRAW.IO STYLE: Événements statiques uniquement sur le canvas
         canvas.addEventListener("click", this.onCanvasClick.bind(this));
-        canvas.addEventListener("mousemove", this.onCanvasMouseMove.bind(this));
-        canvas.addEventListener("mouseup", this.onCanvasMouseUp.bind(this));
         canvas.addEventListener("mousedown", this.onCanvasMouseDown.bind(this));
         canvas.addEventListener("wheel", this.onCanvasWheel.bind(this), { passive: false });
 
@@ -237,12 +265,13 @@ export class BpmEditorWidget extends Component {
     cleanup() {
         const canvas = this.canvasRef.el;
         if (canvas) {
-            canvas.removeEventListener("click", this.onCanvasClick);
-            canvas.removeEventListener("mousedown", this.onCanvasMouseDown);
-            canvas.removeEventListener("wheel", this.onCanvasWheel);
-            canvas.removeEventListener("mousemove", this.onCanvasMouseMove);
-            canvas.removeEventListener("mouseup", this.onCanvasMouseUp);
+            canvas.removeEventListener("click", this.boundOnCanvasClick);
+            canvas.removeEventListener("mousedown", this.boundOnCanvasMouseDown);
+            canvas.removeEventListener("mousemove", this.boundOnCanvasMouseMove);
+            canvas.removeEventListener("mouseup", this.boundOnCanvasMouseUp);
+            canvas.removeEventListener("wheel", this.boundOnCanvasWheel);
         }
+        console.log('✅ Canvas nettoyé');
     }
 
     /**
@@ -276,7 +305,7 @@ export class BpmEditorWidget extends Component {
             }
             // Désactive le mode connexion
             this.state.isConnecting = false;
-            this.state.connectionStart = null;
+            this.state.connectionStartIndex = null;
             return;
         }
 
@@ -285,7 +314,7 @@ export class BpmEditorWidget extends Component {
             this.selectNode(clickedNode);
         } else {
             // Clic sur le canvas vide : désélectionne
-            this.state.selectedNode = null;
+            this.state.selectedNodeIndex = null;
             this.state.selectedEdge = null;
         }
     }
@@ -296,23 +325,41 @@ export class BpmEditorWidget extends Component {
     onCanvasMouseDown(event) {
         if (!this.canvasRef.el) return;
 
-        // Bouton du milieu ou Shift+clic gauche = pan
-        if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
+        // Seulement le bouton du milieu active le pan (pas Shift)
+        if (event.button === 1) {
             event.preventDefault();
             this.state.isPanning = true;
             this.state.panStart = {
                 x: event.clientX - this.state.panOffset.x,
                 y: event.clientY - this.state.panOffset.y,
             };
+            return;
+        }
+
+        // Si on est en mode connexion, gère le clic sur un nœud cible
+        if (this.state.isConnecting && this.state.connectionStart) {
+            const rect = this.canvasRef.el.getBoundingClientRect();
+            const x = (event.clientX - rect.left - this.state.panOffset.x) / this.state.zoom;
+            const y = (event.clientY - rect.top - this.state.panOffset.y) / this.state.zoom;
+            
+            const clickedNode = this.findNodeAt(x, y);
+            
+            if (clickedNode && clickedNode.id !== this.state.connectionStart.id) {
+                // Crée la connexion
+                this.createEdge(this.state.connectionStart.id, clickedNode.id);
+                // Désactive le mode connexion
+                this.state.isConnecting = false;
+                this.state.connectionStartIndex = null;
+                event.preventDefault();
+                event.stopPropagation();
+            }
         }
     }
 
     /**
-     * Gère le mouvement de la souris sur le canvas
+     * DRAW.IO STYLE: Gestionnaire global de mouvement de souris
      */
-    onCanvasMouseMove(event) {
-        if (!this.canvasRef.el) return;
-        
+    onMouseMove(event) {
         // Mode pan
         if (this.state.isPanning) {
             this.state.panOffset.x = event.clientX - this.state.panStart.x;
@@ -320,15 +367,21 @@ export class BpmEditorWidget extends Component {
             return;
         }
 
-        // Mode drag de nœud
-        if (this.state.isDragging && this.state.selectedNode) {
-            const rect = this.canvasRef.el.getBoundingClientRect();
-            const x = (event.clientX - rect.left - this.state.panOffset.x) / this.state.zoom - this.state.dragOffset.x;
-            const y = (event.clientY - rect.top - this.state.panOffset.y) / this.state.zoom - this.state.dragOffset.y;
+        // Mode drag de nœud - DRAW.IO STYLE
+        if (this.state.isDragging && this.state.selectedNodeIndex !== null) {
+            if (!this.canvasRef.el) return;
             
-            this.state.selectedNode.x = Math.max(0, x);
-            this.state.selectedNode.y = Math.max(0, y);
-            this.saveDefinition();
+            const rect = this.canvasRef.el.getBoundingClientRect();
+            const mouseX = (event.clientX - rect.left - this.state.panOffset.x) / this.state.zoom;
+            const mouseY = (event.clientY - rect.top - this.state.panOffset.y) / this.state.zoom;
+            
+            // Nouvelle position
+            const newX = Math.max(0, Math.round(mouseX - this.state.dragOffset.x));
+            const newY = Math.max(0, Math.round(mouseY - this.state.dragOffset.y));
+            
+            // Modifie directement dans le tableau
+            this.state.nodes[this.state.selectedNodeIndex].x = newX;
+            this.state.nodes[this.state.selectedNodeIndex].y = newY;
         }
     }
 
@@ -355,11 +408,19 @@ export class BpmEditorWidget extends Component {
     }
 
     /**
-     * Gère le relâchement de la souris
+     * DRAW.IO STYLE: Gestionnaire global de relâchement de souris
      */
-    onCanvasMouseUp(event) {
+    onMouseUp(event) {
         if (this.state.isDragging) {
             this.state.isDragging = false;
+            
+            // Retirer les événements du document
+            document.removeEventListener("mousemove", this.handleMouseMove);
+            document.removeEventListener("mouseup", this.handleMouseUp);
+            
+            // Sauvegarde la position après le drag (sans notifyFieldChange pour éviter surcharge)
+            console.log('✅ Drag terminé - sauvegarde de la position');
+            this.saveDefinition();
         }
         if (this.state.isPanning) {
             this.state.isPanning = false;
@@ -381,18 +442,106 @@ export class BpmEditorWidget extends Component {
      * Sélectionne un nœud
      */
     selectNode(node) {
-        this.state.selectedNode = node;
+        this.state.selectedNodeIndex = this.state.nodes.findIndex(n => n.id === node.id);
         this.state.selectedEdge = null;
+        console.log('✅ Nœud sélectionné, index:', this.state.selectedNodeIndex);
+    }
+
+    /**
+     * Édite le nom d'un nœud (double-clic)
+     */
+    async editNodeName(node) {
+        console.log('🔍 Node à éditer:', node);
+        const newName = prompt('Nouveau nom :', node.name);
+        if (newName && newName.trim() !== '' && newName !== node.name) {
+            try {
+                console.log('📝 Mise à jour du nom - recordId:', node.recordId, 'nouveau nom:', newName.trim());
+                
+                if (!node.recordId) {
+                    console.error('❌ Pas de recordId pour ce nœud:', node);
+                    if (this.env.services.notification) {
+                        this.env.services.notification.add(
+                            'Erreur: nœud invalide',
+                            { type: 'danger' }
+                        );
+                    }
+                    return;
+                }
+                
+                // Met à jour en base de données
+                const result = await this.env.services.orm.write('bpm.node', [node.recordId], {
+                    name: newName.trim()
+                });
+                
+                console.log('✅ Résultat de l\'écriture:', result);
+                
+                // Recharge tout depuis la base pour avoir les données à jour
+                await this.loadDefinition();
+                
+                // Notifie le changement et recharge le record pour l'onglet Nœuds
+                this.notifyFieldChange();
+                await this.props.record.load();
+                
+                console.log('✅ Nom du nœud mis à jour:', newName);
+                
+                if (this.env.services.notification) {
+                    this.env.services.notification.add(
+                        `Nom modifié : "${newName}"`,
+                        { type: 'success' }
+                    );
+                }
+            } catch (error) {
+                console.error('❌ Erreur lors de la mise à jour du nom:', error);
+                if (this.env.services.notification) {
+                    this.env.services.notification.add(
+                        `Erreur: ${error.message}`,
+                        { type: 'danger' }
+                    );
+                }
+            }
+        }
     }
 
     /**
      * Démarre le glisser-déposer d'un nœud
      */
     startDrag(event, node) {
-        event.stopPropagation();
+        console.log('🎯 startDrag appelé pour:', node.name, 'button:', event.button, 'shiftKey:', event.shiftKey);
         
-        // Ne démarre pas le drag si on fait du pan
-        if (event.button === 1 || event.shiftKey) return;
+        // Ne démarre pas le drag si c'est le bouton du milieu
+        if (event.button === 1) {
+            console.log('❌ Drag annulé: bouton milieu');
+            return;
+        }
+        
+        // Détection du double-clic (deux clics sur le même nœud en moins de 300ms)
+        const now = Date.now();
+        if (this.lastClickedNode === node.id && (now - this.lastClickTime) < 300) {
+            console.log('💡 Double-clic détecté sur:', node.name);
+            event.preventDefault();
+            event.stopPropagation();
+            this.editNodeName(node);
+            this.lastClickTime = 0;
+            this.lastClickedNode = null;
+            return;
+        }
+        this.lastClickTime = now;
+        this.lastClickedNode = node.id;
+        
+        // Si on est en mode connexion, créer l'edge et sortir
+        if (this.state.isConnecting) {
+            console.log('🔗 Mode connexion: création edge');
+            if (this.state.connectionStart && this.state.connectionStart.id !== node.id) {
+                this.createEdge(this.state.connectionStart.id, node.id);
+            }
+            this.state.isConnecting = false;
+            this.state.connectionStartIndex = null;
+            return;
+        }
+        
+        // Empêche les comportements par défaut
+        event.stopPropagation();
+        event.preventDefault();
 
         const rect = this.canvasRef.el.getBoundingClientRect();
         const mouseX = (event.clientX - rect.left - this.state.panOffset.x) / this.state.zoom;
@@ -404,37 +553,160 @@ export class BpmEditorWidget extends Component {
         };
         this.state.isDragging = true;
         this.selectNode(node);
+        
+        // DRAW.IO STYLE: Attacher les événements au document
+        document.addEventListener("mousemove", this.handleMouseMove);
+        document.addEventListener("mouseup", this.handleMouseUp);
+        console.log('✅ Drag démarré, isDragging =', this.state.isDragging, 'dragOffset:', this.state.dragOffset);
     }
 
     /**
      * Ajoute un nouveau nœud
      */
-    addNode(type = "task") {
-        const newNode = {
-            id: this.generateId(),
-            type: type,
-            name: this.getNodeTypeLabel(type),
-            x: 100 + Math.random() * 200,
-            y: 100 + Math.random() * 200,
+    /**
+     * Ajoute un nouveau nœud au workflow et le crée en base de données
+     */
+    async addNode(type = "task") {
+        console.log('🎯 addNode appelé avec type:', type);
+        
+        const processId = this.props.record.resId || this.props.record.data.id;
+        if (!processId) {
+            console.error("❌ Impossible d'ajouter un nœud: pas de processId");
+            if (this.env.services.notification) {
+                this.env.services.notification.add(
+                    "Veuillez d'abord enregistrer le processus",
+                    { type: 'warning' }
+                );
+            }
+            return;
+        }
+
+        // Génère un ID unique pour le nœud
+        const nodeId = this.generateId();
+        
+        // Position aléatoire dans le canvas
+        const x = 100 + Math.random() * 300;
+        const y = 100 + Math.random() * 300;
+        
+        // Demande le nom du nœud à l'utilisateur
+        const typeLabels = {
+            'start': 'Début',
+            'task': 'Tâche',
+            'gateway': 'Décision',
+            'end': 'Fin'
         };
-        this.state.nodes.push(newNode);
-        this.saveDefinition();
+        const defaultName = typeLabels[type] || 'Nœud';
+        const nodeName = prompt(`Nom du ${defaultName.toLowerCase()} :`, defaultName);
+        
+        // Si l'utilisateur annule, ne pas créer le nœud
+        if (!nodeName || nodeName.trim() === '') {
+            console.log('❌ Création annulée par l\'utilisateur');
+            return;
+        }
+
+        try {
+            console.log('💾 Création du nœud en base:', { processId, nodeId, nodeName, type });
+            
+            // Crée le nœud directement en base de données
+            const recordId = await this.env.services.orm.create('bpm.node', [{
+                name: nodeName,
+                node_type: type,
+                position_x: x,
+                position_y: y,
+                process_id: processId,
+                node_id: nodeId,
+                sequence: (this.state.nodes.length + 1) * 10,
+            }]);
+
+            console.log('✅ Nœud créé avec recordId:', recordId);
+
+            // Ajoute le nœud au state local
+            const newNode = {
+                id: nodeId,
+                type: type,
+                name: nodeName,
+                x: x,
+                y: y,
+                recordId: Array.isArray(recordId) ? recordId[0] : recordId,
+            };
+            
+            this.state.nodes.push(newNode);
+            console.log('✅ Nœud ajouté au state, total:', this.state.nodes.length);
+            
+            // Notifie Odoo que le champ a changé (pour marquer le record comme modifié)
+            this.notifyFieldChange();
+            
+            // Recharge le record pour rafraîchir l'onglet Nœuds
+            await this.props.record.load();
+            console.log('🔄 Record rechargé - onglet Nœuds mis à jour');
+            
+            // Notification de succès
+            if (this.env.services.notification) {
+                this.env.services.notification.add(
+                    `Nœud "${nodeName}" créé`,
+                    { type: 'success' }
+                );
+            }
+        } catch (error) {
+            console.error("❌ Erreur lors de la création du nœud:", error);
+            if (this.env.services.notification) {
+                this.env.services.notification.add(
+                    `Erreur: ${error.message || 'Impossible de créer le nœud'}`,
+                    { type: 'danger' }
+                );
+            }
+        }
     }
 
     /**
      * Supprime le nœud sélectionné
      */
-    deleteSelectedNode() {
-        if (this.state.selectedNode) {
-            const nodeId = this.state.selectedNode.id;
-            // Supprime les edges connectés
-            this.state.edges = this.state.edges.filter(
-                edge => edge.source !== nodeId && edge.target !== nodeId
-            );
-            // Supprime le nœud
-            this.state.nodes = this.state.nodes.filter(node => node.id !== nodeId);
-            this.state.selectedNode = null;
-            this.saveDefinition();
+    async deleteSelectedNode() {
+        const selectedNode = this.state.selectedNode;
+        if (selectedNode) {
+            const nodeId = selectedNode.id;
+            const recordId = selectedNode.recordId;
+            
+            try {
+                // 1. Supprime les edges connectés du state
+                this.state.edges = this.state.edges.filter(
+                    edge => edge.source !== nodeId && edge.target !== nodeId
+                );
+                
+                // 2. Supprime le nœud du state
+                this.state.nodes = this.state.nodes.filter(node => node.id !== nodeId);
+                this.state.selectedNodeIndex = null;
+                
+                // 3. Supprime de la base de données si le nœud a un recordId
+                if (recordId) {
+                    console.log('🗑️ Suppression du nœud en base, recordId:', recordId);
+                    await this.env.services.orm.unlink('bpm.node', [recordId]);
+                    console.log('✅ Nœud supprimé de la base');
+                }
+                
+                // 4. Notifie Odoo que le champ a changé
+                this.notifyFieldChange();
+                
+                // 5. Recharge le record pour rafraîchir l'onglet Nœuds
+                await this.props.record.load();
+                console.log('🔄 Record rechargé - onglet Nœuds mis à jour');
+                
+                // 6. Notification succès
+                if (this.env.services.notification) {
+                    this.env.services.notification.add(
+                        'Nœud supprimé',
+                        { type: 'success' }
+                    );
+                }
+            } catch (error) {
+                console.error('❌ Erreur lors de la suppression du nœud:', error);
+                if (this.env.services.notification) {
+                    this.env.services.notification.add(
+                        `Erreur: ${error.message || 'Impossible de supprimer le nœud'}`,
+                        { type: 'danger' }
+                    );
+                }
+            }
         }
     }
 
@@ -443,47 +715,165 @@ export class BpmEditorWidget extends Component {
      */
     startConnection(node) {
         this.state.isConnecting = true;
-        this.state.connectionStart = node;        console.log('Mode connexion activé. Cliquez sur un autre nœud pour créer la connexion.');
+        this.state.connectionStartIndex = this.state.nodes.findIndex(n => n.id === node.id);
+        console.log('Mode connexion activé. Cliquez sur un autre nœud pour créer la connexion.');
+        
         // Affiche un message visuel à l'utilisateur
         if (this.env.services.notification) {
             this.env.services.notification.add(
                 'Cliquez sur un nœud cible pour créer la connexion',
                 { type: 'info' }
             );
-        }    }
+        }
+    }
 
     /**
      * Crée une transition entre deux nœuds
      */
-    createEdge(sourceId, targetId) {
+    async createEdge(sourceId, targetId) {
         // Vérifie si l'edge existe déjà
         const exists = this.state.edges.some(
             edge => edge.source === sourceId && edge.target === targetId
         );
         if (exists) return;
 
-        const newEdge = {
-            id: this.generateId(),
-            source: sourceId,
-            target: targetId,
-            name: '',
-            condition: '',
-            sequence: 10,
-        };
-        this.state.edges.push(newEdge);
-        this.saveDefinition();
+        const processId = this.props.record.resId || this.props.record.data.id;
+        if (!processId) {
+            console.error('❌ Impossible de créer la connexion: pas de processId');
+            return;
+        }
+
+        try {
+            // 1. Trouve les recordIds des nœuds source et target
+            const sourceNode = this.state.nodes.find(n => n.id === sourceId);
+            const targetNode = this.state.nodes.find(n => n.id === targetId);
+            
+            if (!sourceNode || !targetNode || !sourceNode.recordId || !targetNode.recordId) {
+                console.error('❌ Nœuds source ou target introuvables');
+                return;
+            }
+
+            // 2. Crée l'edge en base de données
+            const edgeId = this.generateId();
+            console.log('🔗 Création edge en base:', sourceId, '->', targetId);
+            
+            const recordId = await this.env.services.orm.create('bpm.edge', [{
+                process_id: processId,
+                source_node_id: sourceNode.recordId,
+                target_node_id: targetNode.recordId,
+                edge_id: edgeId,
+                name: `Transition ${sourceNode.name} -> ${targetNode.name}`,
+                condition: false,
+                sequence: 10,
+            }]);
+
+            // 3. Ajoute au state local
+            const newEdge = {
+                id: edgeId,
+                recordId: Array.isArray(recordId) ? recordId[0] : recordId,
+                source: sourceId,
+                target: targetId,
+                name: '',
+                condition: '',
+                sequence: 10,
+            };
+            this.state.edges.push(newEdge);
+            console.log('✅ Connexion créée:', sourceId, '->', targetId);
+            
+            // 4. Notifie Odoo que le champ a changé
+            this.notifyFieldChange();
+            
+            // 5. Notification succès
+            if (this.env.services.notification) {
+                this.env.services.notification.add(
+                    'Connexion créée',
+                    { type: 'success' }
+                );
+            }
+        } catch (error) {
+            console.error('❌ Erreur lors de la création de la connexion:', error);
+            if (this.env.services.notification) {
+                this.env.services.notification.add(
+                    `Erreur: ${error.message || 'Impossible de créer la connexion'}`,
+                    { type: 'danger' }
+                );
+            }
+        }
     }
 
     /**
      * Supprime l'edge sélectionné
      */
-    deleteSelectedEdge() {
+    async deleteSelectedEdge() {
         if (this.state.selectedEdge) {
-            this.state.edges = this.state.edges.filter(
-                edge => edge.id !== this.state.selectedEdge.id
-            );
-            this.state.selectedEdge = null;
-            this.saveDefinition();
+            const edge = this.state.selectedEdge;
+            const recordId = edge.recordId;
+            
+            try {
+                // 1. Supprime du state
+                this.state.edges = this.state.edges.filter(
+                    e => e.id !== edge.id
+                );
+                this.state.selectedEdge = null;
+                
+                // 2. Supprime de la base de données si l'edge a un recordId
+                if (recordId) {
+                    console.log('🗑️ Suppression edge en base, recordId:', recordId);
+                    await this.env.services.orm.unlink('bpm.edge', [recordId]);
+                    console.log('✅ Connexion supprimée de la base');
+                }
+                
+                // 3. Notifie Odoo que le champ a changé
+                this.notifyFieldChange();
+                
+                // 4. Notification succès
+                if (this.env.services.notification) {
+                    this.env.services.notification.add(
+                        'Connexion supprimée',
+                        { type: 'success' }
+                    );
+                }
+            } catch (error) {
+                console.error('❌ Erreur lors de la suppression de la connexion:', error);
+                if (this.env.services.notification) {
+                    this.env.services.notification.add(
+                        `Erreur: ${error.message || 'Impossible de supprimer la connexion'}`,
+                        { type: 'danger' }
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Notifie Odoo que le champ a été modifié
+     */
+    notifyFieldChange() {
+        // Crée une représentation JSON de la définition actuelle
+        const definition = JSON.stringify({
+            nodes: this.state.nodes.map(n => ({
+                id: n.id,
+                recordId: n.recordId,
+                name: n.name,
+                type: n.type,
+                x: n.x,
+                y: n.y
+            })),
+            edges: this.state.edges.map(e => ({
+                id: e.id,
+                recordId: e.recordId,
+                source: e.source,
+                target: e.target,
+                name: e.name,
+                condition: e.condition,
+                sequence: e.sequence
+            }))
+        });
+        
+        // Notifie Odoo via props.update
+        if (this.props.update) {
+            this.props.update(definition);
+            console.log('📢 Odoo notifié du changement');
         }
     }
 

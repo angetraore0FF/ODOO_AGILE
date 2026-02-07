@@ -3,7 +3,7 @@
 
 {
     'name': 'Gestion BPM avec Éditeur Graphique',
-    'version': '18.0.1.0.0',
+    'version': '18.0.1.2.1',
     'category': 'Business Process Management',
     'summary': 'Module de gestion de processus métiers avec éditeur graphique de workflow',
     'description': """

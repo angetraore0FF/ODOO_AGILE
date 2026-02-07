@@ -39,7 +39,27 @@
 
 /* Mode connexion actif */
 .bpm_canvas.connecting {
-    cursor: crosshair;
+    cursor: crosshair !important;
+}
+
+.bpm_canvas.connecting .bpm_node {
+    cursor: crosshair !important;
+}
+
+.bpm_canvas.connecting .bpm_connection_point {
+    opacity: 1 !important;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        r: 8;
+        opacity: 1;
+    }
+    50% {
+        r: 10;
+        opacity: 0.7;
+    }
 }
 
 /* Mode pan actif */

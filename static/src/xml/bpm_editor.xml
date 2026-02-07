@@ -93,7 +93,7 @@
                                       rx="5"
                                       stroke="#fff"
                                       stroke-width="2"
-                                      t-on-mousedown.stop="(ev) => this.startDrag(ev, node)"/>
+                                      t-on-mousedown="(ev) => this.startDrag(ev, node)"/>
                                 
                                 <!-- Texte du nœud -->
                                 <text x="40" y="45" 

@@ -630,6 +630,70 @@ class BpmInstance(models.Model):
     # Progression (pourcentage)
     progress = fields.Float(string='Progression (%)', compute='_compute_progress', store=True)
     
+    # Compteurs pour boutons intelligents
+    invoice_count = fields.Integer(string='Nombre de factures', compute='_compute_invoice_count')
+    picking_count = fields.Integer(string='Nombre de livraisons', compute='_compute_picking_count')
+    
+    def _compute_invoice_count(self):
+        """Compte les factures liées à la commande"""
+        for record in self:
+            record.invoice_count = 0
+            if record.res_model == 'sale.order' and record.res_id:
+                try:
+                    sale_order = self.env['sale.order'].browse(record.res_id)
+                    if sale_order.exists():
+                        record.invoice_count = len(sale_order.invoice_ids)
+                except:
+                    pass
+    
+    def _compute_picking_count(self):
+        """Compte les bons de livraison liés à la commande"""
+        for record in self:
+            record.picking_count = 0
+            if record.res_model == 'sale.order' and record.res_id:
+                try:
+                    sale_order = self.env['sale.order'].browse(record.res_id)
+                    if sale_order.exists():
+                        record.picking_count = len(sale_order.picking_ids)
+                except:
+                    pass
+    
+    def action_view_invoices(self):
+        """Ouvre la vue des factures liées"""
+        self.ensure_one()
+        if self.res_model == 'sale.order' and self.res_id:
+            sale_order = self.env['sale.order'].browse(self.res_id)
+            invoices = sale_order.invoice_ids
+            
+            action = self.env['ir.actions.act_window']._for_xml_id('account.action_move_out_invoice_type')
+            if len(invoices) > 1:
+                action['domain'] = [('id', 'in', invoices.ids)]
+            elif len(invoices) == 1:
+                action['views'] = [(self.env.ref('account.view_move_form').id, 'form')]
+                action['res_id'] = invoices.id
+            else:
+                action = {'type': 'ir.actions.act_window_close'}
+            return action
+        return {'type': 'ir.actions.act_window_close'}
+    
+    def action_view_pickings(self):
+        """Ouvre la vue des bons de livraison liés"""
+        self.ensure_one()
+        if self.res_model == 'sale.order' and self.res_id:
+            sale_order = self.env['sale.order'].browse(self.res_id)
+            pickings = sale_order.picking_ids
+            
+            action = self.env['ir.actions.act_window']._for_xml_id('stock.action_picking_tree_all')
+            if len(pickings) > 1:
+                action['domain'] = [('id', 'in', pickings.ids)]
+            elif len(pickings) == 1:
+                action['views'] = [(self.env.ref('stock.view_picking_form').id, 'form')]
+                action['res_id'] = pickings.id
+            else:
+                action = {'type': 'ir.actions.act_window_close'}
+            return action
+        return {'type': 'ir.actions.act_window_close'}
+    
     @api.model
     def _get_models(self):
         """Retourne la liste des modèles disponibles"""
