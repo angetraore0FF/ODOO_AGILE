@@ -211,6 +211,26 @@ class BpmProcess(models.Model):
             'context': {'default_process_id': self.id},
         }
     
+    def action_start_instance_manual(self):
+        """Démarre manuellement une instance BPM - demande l'ID de l'enregistrement"""
+        self.ensure_one()
+        
+        if not self.model_name:
+            raise UserError(_('Le modèle cible n\'est pas défini pour ce processus.'))
+        
+        # Pour le moment, affiche un message demandant de créer un nouvel enregistrement
+        # ou utilise le menu "Mes tâches en attente" pour valider les instances existantes
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Démarrage manuel'),
+                'message': _('Pour tester: Créez un nouvel enregistrement %s, le processus démarrera automatiquement. Ensuite allez dans "Mes tâches en attente" pour valider.') % self.model_name,
+                'type': 'info',
+                'sticky': True,
+            }
+        }
+    
     def action_launch_process(self):
         """Action pour lancer le processus (sera appelée depuis le modèle cible)"""
         self.ensure_one()
@@ -225,13 +245,18 @@ class BpmProcess(models.Model):
         """
         Hook pour enregistrer les déclencheurs automatiques sur les modèles cibles
         Cette méthode est appelée après le chargement de tous les modules
+        IMPORTANT: Toute l'opération s'exécute en mode SUPERUSER pour éviter les problèmes de droits
         """
         super()._register_hook()
         
         _logger.info('=== BPM _register_hook appelé ===')
         
+        # IMPORTANT: On exécute tout en sudo() car _register_hook est appelé pendant l'init
+        # et l'utilisateur peut ne pas avoir les droits sur ir.model
+        sudo_self = self.sudo()
+        
         # Récupère tous les processus actifs avec démarrage automatique
-        processes = self.search([('active', '=', True), ('auto_start', '=', True)])
+        processes = sudo_self.search([('active', '=', True), ('auto_start', '=', True)])
         
         _logger.info('Processus avec auto_start trouvés: %d', len(processes))
         for p in processes:
@@ -244,6 +269,7 @@ class BpmProcess(models.Model):
             
             # Crée les hooks pour le modèle cible
             try:
+                # Accès au modèle via l'environment (pas besoin de sudo ici)
                 model = self.env[process.model_name]
             except KeyError:
                 _logger.warning('Modèle %s introuvable pour le processus %s', process.model_name, process.name)
@@ -260,7 +286,8 @@ class BpmProcess(models.Model):
                     """Déclenche les processus BPM configurés pour ce modèle"""
                     _logger.info('=== _trigger_bpm_process appelé pour %s #%d (type: %s) ===', record._name, record.id, trigger_type)
                     
-                    Process = self.env['bpm.process']
+                    # Utilise sudo() pour éviter les problèmes de permissions
+                    Process = self.env['bpm.process'].sudo()
                     processes = Process.search([
                         ('model_name', '=', record._name),
                         ('active', '=', True),
@@ -290,8 +317,8 @@ class BpmProcess(models.Model):
                                 _logger.warning('Erreur condition déclenchement processus %s: %s', process.name, str(e))
                                 continue
                         
-                        # Crée l'instance du processus
-                        instance = self.env['bpm.instance'].create({
+                        # Crée l'instance du processus (avec sudo pour BPM mais record original)
+                        instance = self.env['bpm.instance'].sudo().create({
                             'process_id': process.id,
                             'res_model': record._name,
                             'res_id': record.id,
@@ -304,39 +331,54 @@ class BpmProcess(models.Model):
             
             # Hook pour la création
             if process.trigger_on in ('create', 'both'):
-                # Garde une référence à la méthode originale
-                original_create = model_class.create
-                
-                @api.model_create_multi
-                def create_with_bpm(self, vals_list):
-                    # Appelle la méthode originale
-                    records = original_create(self, vals_list)
-                    # Lance le processus pour chaque enregistrement créé
-                    for record in records:
-                        self._trigger_bpm_process(record, 'create')
-                    return records
-                
-                # Remplace la méthode create
-                model_class.create = create_with_bpm
-                _logger.info('  - Hook create installé')
+                # Vérifie si le hook n'est pas déjà installé
+                if not hasattr(model_class.create, '_bpm_patched'):
+                    # Garde une référence à la méthode VRAIMENT originale
+                    original_create = model_class.create.__func__ if hasattr(model_class.create, '__func__') else model_class.create
+                    
+                    @api.model_create_multi
+                    def create_with_bpm(self, vals_list):
+                        # Appelle la méthode originale directement sur super()
+                        records = original_create(self, vals_list)
+                        # Lance le processus pour chaque enregistrement créé
+                        for record in records:
+                            self._trigger_bpm_process(record, 'create')
+                        return records
+                    
+                    # Marque comme patché pour éviter double patch
+                    create_with_bpm._bpm_patched = True
+                    
+                    # Remplace la méthode create
+                    model_class.create = create_with_bpm
+                    _logger.info('  - Hook create installé')
+                else:
+                    _logger.info('  - Hook create déjà installé, ignoré')
             
             # Hook pour la modification
             if process.trigger_on in ('write', 'both'):
-                # Garde une référence à la méthode originale
-                original_write = model_class.write
-                
-                def write_with_bpm(self, vals):
-                    # Appelle la méthode originale
-                    result = original_write(self, vals)
-                    # Lance le processus pour chaque enregistrement modifié
-                    for record in self:
-                        record._trigger_bpm_process(record, 'write')
-                    return result
-                
-                # Remplace la méthode write
-                model_class.write = write_with_bpm
-                _logger.info('  - Hook write installé')
+                # Vérifie si le hook n'est pas déjà installé
+                if not hasattr(model_class.write, '_bpm_patched'):
+                    # Garde une référence à la méthode VRAIMENT originale
+                    original_write = model_class.write.__func__ if hasattr(model_class.write, '__func__') else model_class.write
+                    
+                    def write_with_bpm(self, vals):
+                        # Appelle la méthode originale
+                        result = original_write(self, vals)
+                        # Lance le processus pour chaque enregistrement modifié
+                        for record in self:
+                            record._trigger_bpm_process(record, 'write')
+                        return result
+                    
+                    # Marque comme patché pour éviter double patch
+                    write_with_bpm._bpm_patched = True
+                    
+                    # Remplace la méthode write
+                    model_class.write = write_with_bpm
+                    _logger.info('  - Hook write installé')
+                else:
+                    _logger.info('  - Hook write déjà installé, ignoré')
         
+        return True
         return True
 
 
@@ -404,8 +446,15 @@ class BpmNode(models.Model):
     )
     
     # Assignation de tâche (pour les nœuds de type task)
-    assigned_user_id = fields.Many2one('res.users', string='Utilisateur assigné')
-    assigned_group_id = fields.Many2one('res.groups', string='Groupe assigné')
+    requires_validation = fields.Boolean(
+        string='Nécessite validation manuelle',
+        default=False,
+        help='Si activé, le processus attend qu\'un utilisateur valide manuellement ce nœud'
+    )
+    assigned_user_id = fields.Many2one('res.users', string='Utilisateur assigné',
+        help='Utilisateur qui doit valider cette tâche')
+    assigned_group_id = fields.Many2one('res.groups', string='Groupe assigné',
+        help='Groupe d\'utilisateurs pouvant valider cette tâche')
     
     # Notifications
     send_email = fields.Boolean(
@@ -433,6 +482,199 @@ class BpmNode(models.Model):
         """Génère un ID unique pour le nœud"""
         import uuid
         return str(uuid.uuid4())[:8]
+    
+    def execute_node(self, instance):
+        """Exécute les actions de ce nœud"""
+        self.ensure_one()
+        _logger.info('🎯 Exécution du nœud %s pour instance #%d', self.name, instance.id)
+        
+        has_error = False
+        error_messages = []
+        
+        # Exécute l'action automatique si définie
+        if self.auto_action != 'none':
+            try:
+                self._execute_auto_action(instance)
+            except Exception as e:
+                error_msg = f'⚠️ Erreur action automatique: {str(e)}'
+                _logger.warning(error_msg)
+                error_messages.append(error_msg)
+                has_error = True
+        
+        # Envoie un email si configuré
+        if self.send_email:
+            try:
+                self._send_email_notification(instance)
+            except Exception as e:
+                error_msg = f'⚠️ Erreur envoi email: {str(e)}'
+                _logger.warning(error_msg)
+                error_messages.append(error_msg)
+        
+        # Log les erreurs si nécessaire
+        if error_messages:
+            try:
+                current_log = instance.error_log or ''
+                new_log = '\n'.join(error_messages)
+                instance.sudo().write({
+                    'error_log': f'{current_log}\n{new_log}' if current_log else new_log
+                })
+            except Exception as e:
+                _logger.error('Impossible d\'écrire dans error_log: %s', str(e))
+        
+        # Si pas de validation requise, avance automatiquement
+        if not self.requires_validation:
+            instance.advance_to_next_node()
+        else:
+            _logger.info('⏸️ Nœud nécessite validation manuelle - en attente')
+            # Envoyer une notification à l'utilisateur assigné
+            try:
+                self._send_validation_notification(instance)
+            except Exception as e:
+                _logger.warning('⚠️ Erreur envoi notification: %s', str(e))
+    
+    def _execute_auto_action(self, instance):
+        """Exécute l'action automatique du nœud"""
+        self.ensure_one()
+        record = instance.get_record()
+        
+        if not record:
+            raise UserError(_("L'enregistrement lié n'existe plus"))
+        
+        _logger.info('🤖 Exécution action automatique: %s', self.auto_action)
+        
+        if self.auto_action == 'create_invoice' and instance.res_model == 'sale.order':
+            _logger.info('📄 Tentative de création de facture depuis commande %s', record.name)
+            
+            # Confirmer la commande si nécessaire
+            if record.state in ('draft', 'sent'):
+                record.action_confirm()
+            
+            # Vérifier qu'il y a quelque chose à facturer
+            if not any(line.qty_to_invoice > 0 for line in record.order_line):
+                _logger.warning('⚠️ Aucune ligne à facturer pour la commande %s - action ignorée', record.name)
+                return
+            
+            # Créer la facture
+            if hasattr(record, '_create_invoices'):
+                invoice = record._create_invoices()
+                if invoice:
+                    _logger.info('✅ Facture créée: %s', invoice.mapped('name'))
+                else:
+                    _logger.warning('⚠️ Aucune facture créée pour la commande %s', record.name)
+                
+        elif self.auto_action == 'create_delivery' and instance.res_model == 'sale.order':
+            if hasattr(record, 'action_confirm'):
+                record.action_confirm()
+                _logger.info('✅ Bon de livraison créé')
+                
+        elif self.auto_action == 'confirm_order' and instance.res_model == 'sale.order':
+            if hasattr(record, 'action_confirm'):
+                record.action_confirm()
+                _logger.info('✅ Commande confirmée')
+                
+        elif self.auto_action == 'validate_delivery' and instance.res_model == 'stock.picking':
+            if hasattr(record, 'button_validate'):
+                record.button_validate()
+                _logger.info('✅ Livraison validée')
+                
+        elif self.auto_action == 'custom_code' and self.action_code:
+            # Exécution de code Python personnalisé
+            eval_context = {
+                'record': record,
+                'env': self.env,
+                'instance': instance,
+                'datetime': __import__('datetime'),
+                '_logger': _logger,
+            }
+            safe_eval(self.action_code, eval_context, mode='exec', nocopy=True)
+            _logger.info('✅ Code personnalisé exécuté')
+    
+    def _send_email_notification(self, instance):
+        """Envoie une notification email"""
+        self.ensure_one()
+        _logger.info('📧 Envoi email pour nœud %s', self.name)
+        
+        # Détermine le destinataire
+        recipient = None
+        if self.email_to == 'assigned_user' and self.assigned_user_id:
+            recipient = self.assigned_user_id.partner_id
+        elif self.email_to == 'process_creator':
+            recipient = instance.user_id.partner_id
+        elif self.email_to == 'custom' and self.email_to_custom:
+            recipient = self.env['res.partner'].search([('email', '=', self.email_to_custom)], limit=1)
+        
+        if recipient:
+            self.env['mail.mail'].create({
+                'subject': self.email_subject or f'Tâche BPM: {self.name}',
+                'body_html': self.email_body or f'<p>Vous avez une nouvelle tâche: {self.name}</p>',
+                'email_to': recipient.email,
+            }).send()
+            _logger.info('✅ Email envoyé à %s', recipient.email)
+    
+    def _send_validation_notification(self, instance):
+        """Envoie une notification Odoo pour validation manuelle"""
+        self.ensure_one()
+        _logger.info('🔔 Envoi notification de validation pour nœud %s', self.name)
+        
+        # Récupère l'enregistrement lié
+        record = instance.get_record()
+        if not record:
+            _logger.warning('❌ Impossible d\'envoyer la notification: enregistrement introuvable')
+            return
+        
+        # Détermine les utilisateurs à notifier
+        users_to_notify = self.env['res.users']
+        
+        if self.assigned_user_id:
+            users_to_notify |= self.assigned_user_id
+        
+        if self.assigned_group_id:
+            users_to_notify |= self.assigned_group_id.users
+        
+        if not users_to_notify:
+            _logger.warning('⚠️ Aucun utilisateur assigné pour recevoir la notification')
+            return
+        
+        # Prépare le message de notification
+        record_name = record.display_name if hasattr(record, 'display_name') else f"#{record.id}"
+        title = f"Validation requise: {self.name}"
+        message = f"""<p>Une tâche nécessite votre validation:</p>
+        <ul>
+            <li><strong>Processus:</strong> {instance.process_id.name}</li>
+            <li><strong>Étape:</strong> {self.name}</li>
+            <li><strong>Enregistrement:</strong> {record_name}</li>
+        </ul>
+        <p>Accédez à vos tâches en attente depuis le menu BPM.</p>"""
+        
+        # Envoie une notification bus.bus à chaque utilisateur
+        for user in users_to_notify:
+            if user.partner_id:
+                self.env['bus.bus']._sendone(
+                    user.partner_id,
+                    'simple_notification',
+                    {
+                        'title': title,
+                        'message': message,
+                        'type': 'warning',
+                        'sticky': True,
+                    }
+                )
+                _logger.info('✅ Notification envoyée à %s', user.name)
+        
+        # Poster aussi un message dans le chatter de l'enregistrement si possible
+        if hasattr(record, 'message_post'):
+            partner_ids = users_to_notify.mapped('partner_id').ids
+            record.message_post(
+                body=f"""<p>🔔 <strong>Validation BPM requise</strong></p>
+                <p>Étape: <strong>{self.name}</strong></p>
+                <p>Processus: {instance.process_id.name}</p>""",
+                subject=f"Validation requise: {self.name}",
+                message_type='notification',
+                subtype_xmlid='mail.mt_note',
+                partner_ids=partner_ids,
+            )
+            _logger.info('✅ Message posté dans le chatter avec notification aux utilisateurs')
+
     
     _sql_constraints = [
         ('node_id_unique', 'unique(process_id, node_id)', 'L\'ID du nœud doit être unique dans un processus'),
@@ -630,6 +872,9 @@ class BpmInstance(models.Model):
     # Progression (pourcentage)
     progress = fields.Float(string='Progression (%)', compute='_compute_progress', store=True)
     
+    # Log des erreurs
+    error_log = fields.Text(string='Log des erreurs', readonly=True)
+    
     # Compteurs pour boutons intelligents
     invoice_count = fields.Integer(string='Nombre de factures', compute='_compute_invoice_count')
     picking_count = fields.Integer(string='Nombre de livraisons', compute='_compute_picking_count')
@@ -697,7 +942,8 @@ class BpmInstance(models.Model):
     @api.model
     def _get_models(self):
         """Retourne la liste des modèles disponibles"""
-        models = self.env['ir.model'].search([])
+        # Utilise sudo() car les utilisateurs normaux n'ont pas accès à ir.model
+        models = self.env['ir.model'].sudo().search([])
         return [(model.model, model.name) for model in models]
     
     @api.depends('res_model', 'res_id')
@@ -721,6 +967,32 @@ class BpmInstance(models.Model):
                     record.res_record = False
             else:
                 record.res_record = False
+    
+    @api.model
+    def create_from_record(self, process_id, record):
+        """
+        Crée une instance BPM pour un enregistrement donné
+        Méthode utilitaire pour déclencher manuellement un processus
+        """
+        process = self.env['bpm.process'].sudo().browse(process_id)
+        if not process.exists():
+            raise UserError(_('Processus BPM introuvable'))
+        
+        # Crée l'instance
+        instance = self.sudo().create({
+            'process_id': process.id,
+            'res_model': record._name,
+            'res_id': record.id,
+            'name': f'{process.name} - {record.display_name}',
+        })
+        
+        _logger.info('✅ Instance BPM créée manuellement: ID %d pour %s #%d', 
+                     instance.id, record._name, record.id)
+        
+        # Démarre automatiquement l'instance
+        instance.action_start()
+        
+        return instance
     
     @api.depends('current_node_id', 'process_id', 'state')
     def _compute_progress(self):
@@ -771,6 +1043,10 @@ class BpmInstance(models.Model):
         
         # Envoie un email si configuré
         self._send_node_email(start_node)
+        
+        # Avance automatiquement du nœud Start vers le premier nœud réel
+        _logger.info('🚀 Avancement automatique du nœud Start vers le nœud suivant')
+        self.advance_to_next_node()
         
         return True
     
@@ -1100,6 +1376,145 @@ class BpmInstance(models.Model):
         except Exception as e:
             _logger.error('Erreur lors de l\'envoi de l\'email pour le nœud %s: %s', node.name, str(e))
             # On ne lève pas d'erreur pour ne pas bloquer le workflow
+    
+    def get_record(self):
+        """Retourne l'enregistrement lié à cette instance"""
+        self.ensure_one()
+        if not self.res_model or not self.res_id:
+            return None
+        try:
+            record = self.env[self.res_model].browse(self.res_id)
+            return record if record.exists() else None
+        except:
+            return None
+    
+    def advance_to_next_node(self):
+        """Avance automatiquement vers le nœud suivant"""
+        self.ensure_one()
+        _logger.info('🚀 Avancement automatique depuis le nœud %s', self.current_node_id.name)
+        
+        current_node = self.current_node_id
+        record = self.get_record()
+        
+        if not record:
+            raise UserError(_("L'enregistrement lié n'existe plus"))
+        
+        # Trouve les transitions sortantes
+        outgoing_edges = current_node.outgoing_edge_ids.sorted('sequence')
+        
+        if not outgoing_edges:
+            if current_node.node_type == 'end':
+                # C'est un nœud de fin, on termine le processus
+                self.write({
+                    'state': 'completed',
+                    'end_date': fields.Datetime.now(),
+                })
+                _logger.info('✅ Processus terminé')
+                return True
+            else:
+                raise UserError(_('Aucune transition sortante depuis "%s"') % current_node.name)
+        
+        # Évalue les conditions
+        valid_edge = None
+        for edge in outgoing_edges:
+            if edge.evaluate_condition(record):
+                valid_edge = edge
+                break
+        
+        if not valid_edge:
+            raise UserError(_('Aucune condition satisfaite pour avancer depuis "%s"') % current_node.name)
+        
+        next_node = valid_edge.target_node_id
+        
+        # Met à jour l'instance
+        self.write({
+            'current_node_id': next_node.id,
+            'history_node_ids': [(4, next_node.id)],
+        })
+        
+        _logger.info('➡️ Avancement vers le nœud: %s', next_node.name)
+        
+        # Exécute le nouveau nœud
+        next_node.execute_node(self)
+        
+        return True
+    
+    def action_validate_task(self):
+        """Valide manuellement la tâche en cours"""
+        self.ensure_one()
+        
+        if self.state != 'running':
+            raise UserError(_('Le processus doit être en cours'))
+        
+        if not self.current_node_id:
+            raise UserError(_('Aucun nœud actif'))
+        
+        if not self.current_node_id.requires_validation:
+            raise UserError(_('Ce nœud ne nécessite pas de validation manuelle'))
+        
+        # Vérifie les permissions
+        if self.current_node_id.assigned_user_id:
+            if self.env.user != self.current_node_id.assigned_user_id:
+                raise UserError(_('Seul %s peut valider cette tâche') % self.current_node_id.assigned_user_id.name)
+        elif self.current_node_id.assigned_group_id:
+            if not self.env.user.has_group(self.current_node_id.assigned_group_id.full_name):
+                raise UserError(_('Vous n\'êtes pas dans le groupe autorisé'))
+        
+        _logger.info('✅ Validation manuelle de la tâche "%s" par %s', self.current_node_id.name, self.env.user.name)
+        
+        # Avance au nœud suivant
+        self.advance_to_next_node()
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Tâche validée'),
+                'message': _('La tâche a été validée avec succès'),
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+    
+    def action_reject_task(self):
+        """Refuse la tâche et annule le processus"""
+        self.ensure_one()
+        
+        if self.state != 'running':
+            raise UserError(_('Le processus doit être en cours'))
+        
+        if not self.current_node_id:
+            raise UserError(_('Aucun nœud actif'))
+        
+        if not self.current_node_id.requires_validation:
+            raise UserError(_('Ce nœud ne nécessite pas de validation manuelle'))
+        
+        # Vérifie les permissions (même logique que validate)
+        if self.current_node_id.assigned_user_id:
+            if self.env.user != self.current_node_id.assigned_user_id:
+                raise UserError(_('Seul %s peut refuser cette tâche') % self.current_node_id.assigned_user_id.name)
+        elif self.current_node_id.assigned_group_id:
+            if not self.env.user.has_group(self.current_node_id.assigned_group_id.full_name):
+                raise UserError(_('Vous n\'êtes pas dans le groupe autorisé'))
+        
+        _logger.info('❌ Refus de la tâche "%s" par %s', self.current_node_id.name, self.env.user.name)
+        
+        # Annule le processus
+        self.write({
+            'state': 'cancelled',
+            'end_date': fields.Datetime.now(),
+        })
+        
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Tâche refusée'),
+                'message': _('Le processus a été annulé'),
+                'type': 'warning',
+                'sticky': False,
+            }
+        }
     
     @api.model
     def create(self, vals):

@@ -6,6 +6,13 @@
               sequence="100"
               web_icon="custom_bpm,static/description/icon.png"/>
 
+    <!-- Sous-menu Mes tâches -->
+    <menuitem id="menu_bpm_my_tasks" 
+              name="📋 Mes tâches en attente" 
+              parent="menu_bpm_root" 
+              action="action_my_pending_tasks" 
+              sequence="5"/>
+
     <!-- Sous-menu Processus -->
     <menuitem id="menu_bpm_process" 
               name="Processus" 

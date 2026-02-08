@@ -10,4 +10,5 @@ access_bpm_instance_user,bpm.instance.user,model_bpm_instance,base.group_user,1,
 access_bpm_template_manager,bpm.template.manager,model_bpm_template,base.group_system,1,1,1,1
 access_bpm_template_user,bpm.template.user,model_bpm_template,base.group_user,1,0,0,0
 access_bpm_template_wizard,bpm.template.wizard,model_bpm_template_wizard,base.group_user,1,1,1,1
+access_ir_model_bpm_user,ir.model.bpm.user,base.model_ir_model,base.group_user,1,0,0,0
 
