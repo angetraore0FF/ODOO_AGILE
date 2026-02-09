@@ -563,9 +563,13 @@ class BpmNode(models.Model):
                     _logger.warning('⚠️ Aucune facture créée pour la commande %s', record.name)
                 
         elif self.auto_action == 'create_delivery' and instance.res_model == 'sale.order':
-            if hasattr(record, 'action_confirm'):
-                record.action_confirm()
-                _logger.info('✅ Bon de livraison créé')
+            # Confirmer la commande si nécessaire (crée automatiquement le picking)
+            if record.state in ('draft', 'sent'):
+                if hasattr(record, 'action_confirm'):
+                    record.action_confirm()
+                    _logger.info('✅ Commande confirmée et bon de livraison créé')
+            else:
+                _logger.info('✅ Commande déjà confirmée (état: %s), bon de livraison déjà créé', record.state)
                 
         elif self.auto_action == 'confirm_order' and instance.res_model == 'sale.order':
             if hasattr(record, 'action_confirm'):
