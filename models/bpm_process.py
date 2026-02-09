@@ -997,6 +997,25 @@ class BpmInstance(models.Model):
             return action
         return {'type': 'ir.actions.act_window_close'}
     
+    def action_view_invoices(self):
+        """Ouvre la vue des factures liées"""
+        self.ensure_one()
+        if self.res_model == 'sale.order' and self.res_id:
+            sale_order = self.env['sale.order'].browse(self.res_id)
+            invoices = sale_order.invoice_ids
+            
+            if not invoices:
+                raise UserError(_('Aucune facture trouvée pour cette commande'))
+            
+            action = self.env['ir.actions.act_window']._for_xml_id('account.action_move_out_invoice_type')
+            if len(invoices) > 1:
+                action['domain'] = [('id', 'in', invoices.ids)]
+            elif len(invoices) == 1:
+                action['views'] = [(self.env.ref('account.view_move_form').id, 'form')]
+                action['res_id'] = invoices.id
+            return action
+        return {'type': 'ir.actions.act_window_close'}
+    
     @api.model
     def _get_models(self):
         """Retourne la liste des modèles disponibles"""
@@ -1523,13 +1542,13 @@ class BpmInstance(models.Model):
         # Avance au nœud suivant
         self.advance_to_next_node()
         
+        # Retourne une action pour rafraîchir la vue avec notification
         return {
             'type': 'ir.actions.client',
-            'tag': 'display_notification',
+            'tag': 'reload',
             'params': {
-                'title': _('Tâche validée'),
-                'message': _('La tâche a été validée avec succès'),
                 'type': 'success',
+                'message': _('Tâche validée avec succès ! Le workflow a avancé.'),
                 'sticky': False,
             }
         }
