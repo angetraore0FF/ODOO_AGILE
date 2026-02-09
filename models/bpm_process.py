@@ -644,9 +644,9 @@ class BpmNode(models.Model):
             <li><strong>Étape:</strong> {self.name}</li>
             <li><strong>Enregistrement:</strong> {record_name}</li>
         </ul>
-        <p>Accédez à vos tâches en attente depuis le menu BPM.</p>"""
+        <p>Cliquez sur cette notification pour accéder à la tâche.</p>"""
         
-        # Envoie une notification bus.bus à chaque utilisateur
+        # Envoie une notification bus.bus à chaque utilisateur avec action
         for user in users_to_notify:
             if user.partner_id:
                 self.env['bus.bus']._sendone(
@@ -657,9 +657,16 @@ class BpmNode(models.Model):
                         'message': message,
                         'type': 'warning',
                         'sticky': True,
+                        'action': {
+                            'type': 'ir.actions.act_window',
+                            'res_model': 'bpm.instance',
+                            'res_id': instance.id,
+                            'views': [[False, 'form']],
+                            'target': 'current',
+                        }
                     }
                 )
-                _logger.info('✅ Notification envoyée à %s', user.name)
+                _logger.info('✅ Notification cliquable envoyée à %s', user.name)
         
         # Poster aussi un message dans le chatter de l'enregistrement si possible
         if hasattr(record, 'message_post'):
@@ -674,6 +681,53 @@ class BpmNode(models.Model):
                 partner_ids=partner_ids,
             )
             _logger.info('✅ Message posté dans le chatter avec notification aux utilisateurs')
+        
+        # Envoyer un email réel à chaque utilisateur
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url')
+        instance_url = f"{base_url}/web#id={instance.id}&model=bpm.instance&view_type=form"
+        
+        for user in users_to_notify:
+            if user.email:
+                email_body = f"""
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #875A7B;">🔔 Validation BPM requise</h2>
+                    <p>Bonjour {user.name},</p>
+                    <p>Une tâche nécessite votre validation dans le système BPM:</p>
+                    <ul>
+                        <li><strong>Processus:</strong> {instance.process_id.name}</li>
+                        <li><strong>Étape:</strong> {self.name}</li>
+                        <li><strong>Enregistrement:</strong> {record_name}</li>
+                    </ul>
+                    <p style="margin: 30px 0;">
+                        <a href="{instance_url}" 
+                           style="background-color: #875A7B; color: white; padding: 12px 30px; 
+                                  text-decoration: none; border-radius: 5px; display: inline-block;">
+                            ✅ Accéder à la tâche
+                        </a>
+                    </p>
+                    <p style="color: #666; font-size: 12px;">
+                        Vous pouvez également accéder à vos tâches en attente depuis le menu BPM dans Odoo.
+                    </p>
+                </div>
+                """
+                
+                try:
+                    # Récupère le serveur SMTP configuré (le premier trouvé)
+                    mail_server = self.env['ir.mail_server'].sudo().search([('smtp_host', '!=', False)], limit=1)
+                    email_from = mail_server.smtp_user if mail_server and mail_server.smtp_user else user.email
+                    
+                    mail = self.env['mail.mail'].sudo().create({
+                        'subject': f"[BPM] Validation requise: {self.name}",
+                        'body_html': email_body,
+                        'email_to': user.email,
+                        'email_from': email_from,
+                        'mail_server_id': mail_server.id if mail_server else False,
+                        'auto_delete': False,
+                    })
+                    mail.send()
+                    _logger.info('📧 Email envoyé à %s (%s)', user.name, user.email)
+                except Exception as e:
+                    _logger.warning('⚠️ Erreur envoi email à %s: %s', user.name, str(e))
 
     
     _sql_constraints = [
